@@ -29,6 +29,13 @@
     tab: 'home', view: null, me: null, merchants: [], category: 'All', search: '', searchResults: null,
     store: null, cart: loadCart(), orders: [], wallet: null, points: null,
   };
+  // Guest orders placed on this phone (private tokens to track them)
+  const GUEST_KEY = '100shops_guest_orders', GUEST_INFO = '100shops_guest_info';
+  const guestTokens = () => { try { return JSON.parse(localStorage.getItem(GUEST_KEY)) || []; } catch (e) { return []; } };
+  const addGuestToken = (id, token) => { try { const l = guestTokens().filter(x => x.id !== id); l.unshift({ id, token }); localStorage.setItem(GUEST_KEY, JSON.stringify(l.slice(0, 30))); } catch (e) {} };
+  const clearGuestTokens = () => { try { localStorage.removeItem(GUEST_KEY); } catch (e) {} };
+  const guestInfo = () => { try { return JSON.parse(localStorage.getItem(GUEST_INFO)) || {}; } catch (e) { return {}; } };
+  const tokenFor = id => (guestTokens().find(x => x.id === id) || {}).token;
   let pollTimer = null;
 
   function loadCart() { try { return JSON.parse(localStorage.getItem(CART_KEY)) || null; } catch (e) { return null; } }
@@ -38,52 +45,63 @@
 
   // ───────────── Boot ─────────────
   async function boot() {
-    try { await S.loadInfo(); } catch (e) { app.innerHTML = `<div class="auth"><img class="auth-logo" src="img/logo-256.png" alt="100 - SHOPS logo"><p class="auth-sub">${esc(e.message)}</p><button class="btn" onclick="location.reload()">Try again</button></div>`; return; }
-    if (!S.token()) return renderAuth();
-    try { st.me = await api('customerMe'); } catch (e) { return renderAuth(); }
+    try { await S.loadInfo(); } catch (e) { app.innerHTML = `<div class="auth"><img class="auth-logo" src="img/logo-256.png" alt="100 - SHOPS logo"><p class="auth-sub">${esc(e.message)}</p><div class="center"><button class="btn" onclick="location.reload()">Try again</button></div></div>`; return; }
+    if (S.token()) { try { st.me = await api('customerMe'); } catch (e) { st.me = null; } }
     renderShell();
+    const q = new URLSearchParams(location.search);
+    if (q.get('shop')) openStore(q.get('shop'));
+    if (q.get('ref') && !st.me) openAuth('signup');
   }
 
-  // ───────────── Auth ─────────────
-  function renderAuth(mode) {
-    mode = mode || (new URLSearchParams(location.search).get('ref') ? 'signup' : 'login');
-    const ref = new URLSearchParams(location.search).get('ref') || '';
+  // ───────────── Log in / Sign up (sheet, keeps the cart) ─────────────
+  function openAuth(mode, reason) {
     const info = S.info;
-    app.innerHTML = `<div class="auth">
-      <img class="auth-logo" src="img/logo-256.png" alt="100 - SHOPS logo">
-      <p class="auth-sub">Order from local Ilonggo shops. Pay with your wallet and earn points on every order.</p>
-      <div class="seg" style="margin-bottom:20px"><button data-mode="login" class="${mode === 'login' ? 'on' : ''}">Log in</button><button data-mode="signup" class="${mode === 'signup' ? 'on' : ''}">Create account</button></div>
-      ${mode === 'login' ? `
-      <form class="stack" id="f">
-        <label class="field"><span>Mobile number</span><input class="input" name="mobile" inputmode="tel" autocomplete="tel" placeholder="09171234567" required></label>
-        <label class="field"><span>Password</span><input class="input" type="password" name="password" autocomplete="current-password" required></label>
-        <button class="btn block">Log in</button>
-      </form>` : `
-      ${info.welcomePoints ? `<div class="banner" style="margin-bottom:16px"><strong>Get ${info.welcomePoints} points (${peso0(info.welcomePoints * info.pointValue)})</strong> when you sign up. Use them on your first order.</div>` : ''}
-      <form class="stack" id="f">
-        <label class="field"><span>Full name</span><input class="input" name="name" autocomplete="name" required></label>
-        <label class="field"><span>Mobile number</span><input class="input" name="mobile" inputmode="tel" autocomplete="tel" placeholder="09171234567" required></label>
-        <label class="field"><span>Delivery address</span><input class="input" name="address" autocomplete="street-address" placeholder="House no., street, barangay"></label>
-        <label class="field"><span>Password</span><input class="input" type="password" name="password" minlength="6" autocomplete="new-password" required><div class="hint">At least 6 characters.</div></label>
-        ${ref ? `<p class="small muted">Invited by shop code <b>${esc(ref)}</b></p>` : ''}
-        <button class="btn block">Create account</button>
-      </form>`}
-    </div>`;
-    $$('[data-mode]').forEach(b => b.onclick = () => renderAuth(b.dataset.mode));
-    const f = $('#f');
-    f.onsubmit = e => {
-      e.preventDefault();
-      busy(f.querySelector('button'), async () => {
-        const d = S.form(f);
-        if (mode === 'signup') d.ref = ref;
-        const r = await api(mode === 'login' ? 'customerLogin' : 'customerSignup', d);
-        S.setToken(r.token);
-        st.me = await api('customerMe');
-        if (mode === 'signup' && S.info.welcomePoints) toast(`Welcome! ${S.info.welcomePoints} points added to your account.`);
-        renderShell();
-      });
+    const ref = new URLSearchParams(location.search).get('ref') || '';
+    const g = guestInfo();
+    const sh = sheet(mode === 'login' ? 'Log in' : 'Create your account', '<div id="authBox"></div>');
+    const draw = () => {
+      sh.root.querySelector('.sheet-head h2').textContent = mode === 'login' ? 'Log in' : 'Create your account';
+      sh.el.querySelector('#authBox').innerHTML = `
+        ${reason ? `<p class="muted" style="margin-bottom:12px">${esc(reason)}</p>` : ''}
+        <div class="seg" style="margin-bottom:16px"><button type="button" data-mode="login" class="${mode === 'login' ? 'on' : ''}">Log in</button><button type="button" data-mode="signup" class="${mode === 'signup' ? 'on' : ''}">Sign up</button></div>
+        ${mode === 'login' ? `<form class="stack" id="af">
+          <label class="field"><span>Mobile number</span><input class="input" name="mobile" inputmode="tel" autocomplete="tel" placeholder="09171234567" required value="${esc(g.mobile || '')}"></label>
+          <label class="field"><span>Password</span><input class="input" type="password" name="password" autocomplete="current-password" required></label>
+          <button class="btn block">Log in</button></form>` : `
+          ${info.welcomePoints ? `<div class="banner" style="margin-bottom:14px"><strong>Get ${info.welcomePoints} points (${peso0(info.welcomePoints * info.pointValue)})</strong> free when you sign up, plus points on every order and a wallet to budget your spending.</div>` : ''}
+          <form class="stack" id="af">
+          <label class="field"><span>Full name</span><input class="input" name="name" autocomplete="name" required value="${esc(g.name || '')}"></label>
+          <label class="field"><span>Mobile number</span><input class="input" name="mobile" inputmode="tel" autocomplete="tel" placeholder="09171234567" required value="${esc(g.mobile || '')}"></label>
+          <label class="field"><span>Delivery address</span><input class="input" name="address" autocomplete="street-address" placeholder="House no., street, barangay" value="${esc(g.address || '')}"></label>
+          <label class="field"><span>Password</span><input class="input" type="password" name="password" minlength="6" autocomplete="new-password" required><div class="hint">At least 6 characters.</div></label>
+          ${ref ? `<p class="small muted">Invited by shop code <b>${esc(ref)}</b></p>` : ''}
+          <button class="btn block mango">Create account</button></form>`}`;
+      sh.el.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { mode = b.dataset.mode; draw(); });
+      const f = sh.el.querySelector('#af');
+      f.onsubmit = e => {
+        e.preventDefault();
+        busy(f.querySelector('button.btn.block'), async () => {
+          const d = S.form(f);
+          d.guestTokens = guestTokens().map(x => x.token);
+          if (mode === 'signup') d.ref = ref;
+          const r = await api(mode === 'login' ? 'customerLogin' : 'customerSignup', d);
+          S.setToken(r.token);
+          st.me = await api('customerMe'); st.wallet = null;
+          clearGuestTokens();
+          sh.close();
+          if (mode === 'signup' && info.welcomePoints) toast(`Welcome! ${info.welcomePoints} points added to your account.`);
+          else toast('Welcome back, ' + st.me.Name.split(' ')[0] + '!');
+          if (r.claimed) toast(`${r.claimed} order${r.claimed > 1 ? 's' : ''} from this phone moved to your account. You'll earn points when ${r.claimed > 1 ? 'they are' : 'it is'} completed.`);
+          if (history.replaceState && ref) history.replaceState(null, '', location.pathname);
+          go(st.tab);
+          if (sh.afterAuth) sh.afterAuth();
+        });
+      };
     };
+    draw();
+    return sh;
   }
+  S.openAuth = openAuth;
 
   // ───────────── Shell ─────────────
   const TABS = [
@@ -99,9 +117,16 @@
     const active = st.orders.filter(o => o.Status !== 'Completed' && o.Status !== 'Cancelled').length;
     S.tabbar(TABS.map(t => t.id === 'orders' && active ? Object.assign({}, t, { badge: active }) : t), st.tab, go);
   }
-  function topbar(html) { $('#top').innerHTML = html || `<div class="brand withlogo grow"><img class="logo-sm" src="img/logo-96.png" alt=""><span style="color:var(--forest)">100 - <span>SHOPS</span></span></div>
-    ${S.isStandalone() ? '' : `<button class="btn sm ghost" id="installBtn">${icon('download')} Install</button>`}`;
-    const ib = $('#installBtn'); if (ib) ib.onclick = S.install; }
+  // Right side of the header: Log in / Sign up for the public, points for members
+  function headRight() {
+    if (!st.me) return `<div class="row" style="gap:6px"><button class="btn sm ghost" data-auth="login">Log in</button><button class="btn sm mango" data-auth="signup">Sign up</button></div>`;
+    return `<button class="pill mango" data-goto="points" style="border:0;cursor:pointer;font-size:13px;padding:6px 11px">${icon('star')}<span>${st.me.Points} pts</span></button>`;
+  }
+  function topbar(html) {
+    $('#top').innerHTML = html ? html + headRight() : `<div class="brand withlogo grow"><img class="logo-sm" src="img/logo-96.png" alt=""><span style="color:var(--forest)">100 - <span>SHOPS</span></span></div>` + headRight();
+    $$('#top [data-auth]').forEach(b => b.onclick = () => openAuth(b.dataset.auth));
+    const gp = $('#top [data-goto]'); if (gp) gp.onclick = () => go(gp.dataset.goto);
+  }
 
   function go(tab) {
     st.tab = tab; st.view = tab === 'home' ? st.view : null;
@@ -109,6 +134,17 @@
     window.scrollTo(0, 0);
     drawTabs(); drawCartBar();
     ({ home: st.view === 'store' ? renderStore : renderHome, orders: renderOrders, wallet: renderWallet, points: renderPoints, account: renderAccount })[tab]();
+  }
+
+  // Shown to the public on members-only tabs
+  function memberPitch(title, text) {
+    const info = S.info;
+    $('#page').innerHTML = `<div class="card center" style="padding:28px 20px;margin-top:8px">
+      <img src="img/logo-96.png" alt="" style="width:64px;height:64px;margin:0 auto 12px">
+      <h2>${esc(title)}</h2><p class="muted" style="margin:8px 0 18px">${esc(text)}</p>
+      <div class="row" style="justify-content:center"><button class="btn ghost" data-auth="login">Log in</button><button class="btn mango" data-auth="signup">Sign up free</button></div>
+      ${info.welcomePoints ? `<p class="small" style="margin-top:14px;color:var(--leaf);font-weight:600">New members get ${info.welcomePoints} points (${peso0(info.welcomePoints * info.pointValue)}) right away.</p>` : ''}</div>`;
+    $$('#page [data-auth]').forEach(b => b.onclick = () => openAuth(b.dataset.auth));
   }
 
   function drawCartBar() {
@@ -124,7 +160,7 @@
     topbar();
     const page = $('#page');
     const me = st.me;
-    page.innerHTML = sukiCard() + `
+    page.innerHTML = (st.me ? sukiCard() : guestCard()) + `
       ${(S.info.announcements || []).slice(0, 2).map(a => `<div class="banner" style="margin-top:12px"><strong>${esc(a.Title)}</strong><br>${esc(a.Message)}</div>`).join('')}
       <form class="row" id="searchForm" style="margin-top:18px"><input class="input grow" name="q" placeholder="Search cakes, flowers, food trays…" value="${esc(st.search)}" aria-label="Search products">
       <button class="btn icon" style="background:var(--forest);color:#fff" aria-label="Search">${icon('search')}</button></form>
@@ -136,8 +172,8 @@
     $('#cats').onclick = e => { const c = e.target.closest('[data-cat]'); if (c) { st.category = c.dataset.cat; st.searchResults = null; st.search = ''; renderHome(); } };
     try {
       st.merchants = await api('listMerchants');
-      [st.me] = await Promise.all([api('customerMe')]);
-      if (st.tab === 'home' && !st.view) { $('.suki') && ($('.suki').outerHTML = sukiCard()); bindSuki(); drawShops(); }
+      if (st.me) st.me = await api('customerMe');
+      if (st.tab === 'home' && !st.view) { if (st.me && $('.suki')) $('.suki').outerHTML = sukiCard(); bindSuki(); drawShops(); topbar(); }
     } catch (e) { S.error(e); }
   }
 
@@ -159,8 +195,19 @@
       <div class="suki-actions"><button class="btn mango" data-suki="topup">Top up</button><button class="btn ghost" data-suki="budget">${budgetAmt ? 'Budget' : 'Set a budget'}</button></div>
     </section>`;
   }
+  function guestCard() {
+    const info = S.info;
+    return `<section class="suki" aria-label="Join 100 - SHOPS">
+      <div class="suki-label">Welcome to 100 - SHOPS</div>
+      <div class="suki-bal" style="font-size:25px;margin-top:4px">Order from local shops, no account needed.</div>
+      <p class="small" style="opacity:.9;margin-top:8px">Sign up free to get ${info.welcomePoints ? `<b>${info.welcomePoints} points (${peso0(info.welcomePoints * info.pointValue)})</b>, ` : ''}earn points on every order, and pay with a wallet you can budget.</p>
+      <div class="suki-actions"><button class="btn mango" data-auth="signup">Sign up free</button><button class="btn ghost" data-auth="login">Log in</button></div>
+    </section>`;
+  }
   function bindSuki() {
     $$('[data-suki]').forEach(b => b.onclick = () => b.dataset.suki === 'topup' ? openTopUp() : openBudget());
+    $$('.suki [data-auth]').forEach(b => b.onclick = () => openAuth(b.dataset.auth));
+    if (!st.me) return;
     if (!st.wallet) api('myWallet').then(w => { st.wallet = w; const s = $('.suki'); if (s && st.tab === 'home' && !st.view) { s.outerHTML = sukiCard(); bindSuki(); } }).catch(() => {});
   }
 
@@ -262,13 +309,16 @@
   // ───────────── Checkout ─────────────
   function openCheckout() {
     const info = S.info;
-    const co = { type: 'Delivery', pay: st.me.Wallet > 0 ? 'Wallet' : 'Cash', usePoints: false, points: 0 };
+    const g = guestInfo();
+    const co = { type: 'Delivery', pay: st.me && st.me.Wallet > 0 ? 'Wallet' : 'Cash', usePoints: false, points: 0, name: g.name || '', mobile: g.mobile || '' };
     const sh = sheet('Your order', '<div id="co"></div>');
     const draw = () => {
       if (!st.cart) { sh.close(); drawCartBar(); if (st.view === 'store') renderStoreRows(); return; }
       const sub = cartSubtotal();
       const fee = info.serviceFee, del = co.type === 'Delivery' ? info.deliveryFee : 0;
-      const maxPts = Math.min(st.me.Points, Math.floor(sub / info.pointValue));
+      const guest = !st.me;
+      if (guest) co.pay = 'Cash';
+      const maxPts = guest ? 0 : Math.min(st.me.Points, Math.floor(sub / info.pointValue));
       const canUse = maxPts >= info.minRedeem;
       if (!canUse) co.usePoints = false;
       co.points = co.usePoints ? Math.max(info.minRedeem, Math.min(co.points || maxPts, maxPts)) : 0;
@@ -278,33 +328,40 @@
       const b = st.wallet && st.wallet.budget;
       const overBudget = b && b.amount > 0 && b.spent + total > b.amount;
       sh.el.querySelector('#co').innerHTML = `
+        ${guest ? `<div class="banner" style="margin-bottom:12px">Have an account? <a href="#" data-auth="login">Log in</a> to pay with your wallet and use points. Or order as a guest below.</div>` : ''}
         <p class="small muted" style="margin-bottom:10px">From <b>${esc(st.cart.merchantName)}</b></p>
         <div class="list">${Object.entries(st.cart.items).map(([id, i]) => `<div class="list-item"><div class="grow"><b>${esc(i.name)}</b><div class="small muted">${peso0(i.price)} each</div></div>
           <div class="qty"><button data-q="${esc(id)}" data-d="-1" aria-label="Less">−</button><span>${i.qty}</span><button data-q="${esc(id)}" data-d="1" aria-label="More">+</button></div></div>`).join('')}</div>
         <div class="seg" style="margin-top:16px"><button data-type="Delivery" class="${co.type === 'Delivery' ? 'on' : ''}">Delivery</button><button data-type="Pickup" class="${co.type === 'Pickup' ? 'on' : ''}">Pick up at shop</button></div>
-        ${co.type === 'Delivery' ? `<label class="field" style="margin-top:12px"><span>Deliver to</span><input class="input" id="addr" value="${esc(co.address !== undefined ? co.address : st.me.Address)}" placeholder="House no., street, barangay"></label>` : ''}
+        ${guest ? `<div class="row" style="margin-top:12px;align-items:flex-start"><label class="field grow"><span>Your name</span><input class="input" id="gname" autocomplete="name" value="${esc(co.name)}" required></label>
+          <label class="field grow"><span>Mobile number</span><input class="input" id="gmobile" inputmode="tel" autocomplete="tel" placeholder="09171234567" value="${esc(co.mobile)}" required></label></div>
+          <p class="hint">The shop and rider use this to reach you about your order.</p>` : ''}
+        ${co.type === 'Delivery' ? `<label class="field" style="margin-top:12px"><span>Deliver to</span><input class="input" id="addr" value="${esc(co.address !== undefined ? co.address : (st.me ? st.me.Address : (g.address || '')))}" placeholder="House no., street, barangay"></label>` : ''}
         <label class="field" style="margin-top:12px"><span>Note to the shop (optional)</span><input class="input" id="notes" value="${esc(co.notes || '')}" placeholder="e.g. Happy birthday message on the cake"></label>
         <h3 style="margin:18px 0 8px">Pay with</h3>
         <div class="choice two">
-          <label><input type="radio" name="pay" value="Wallet" ${co.pay === 'Wallet' ? 'checked' : ''}><strong>Wallet</strong><span class="small muted">${peso(st.me.Wallet)} available</span></label>
+          ${guest ? `<label style="opacity:.6;cursor:pointer" data-auth="login"><strong>Wallet</strong><span class="small muted">Log in to use</span></label>`
+            : `<label><input type="radio" name="pay" value="Wallet" ${co.pay === 'Wallet' ? 'checked' : ''}><strong>Wallet</strong><span class="small muted">${peso(st.me.Wallet)} available</span></label>`}
           <label><input type="radio" name="pay" value="Cash" ${co.pay === 'Cash' ? 'checked' : ''}><strong>Cash</strong><span class="small muted">${co.type === 'Delivery' ? 'Pay the rider' : 'Pay at the shop'}</span></label>
         </div>
-        ${co.pay === 'Wallet' && st.me.Wallet < total ? `<div class="banner coral" style="margin-top:10px">Your wallet is short by ${peso(total - st.me.Wallet)}. <a href="#" id="goTop">Top up</a> or pay with cash.</div>` : ''}
-        <div class="card" style="margin-top:16px">
+        ${!guest && co.pay === 'Wallet' && st.me.Wallet < total ? `<div class="banner coral" style="margin-top:10px">Your wallet is short by ${peso(total - st.me.Wallet)}. <a href="#" id="goTop">Top up</a> or pay with cash.</div>` : ''}
+        ${guest ? `<div class="card" style="margin-top:16px;border-color:var(--mango)"><div class="row"><span style="color:var(--mango)">${icon('star')}</span><div class="grow">
+          <b>${earnGuest(sub) > 0 ? `Earn ${earnGuest(sub)} point${earnGuest(sub) > 1 ? 's' : ''} on this order` : 'Earn points on every order'}</b><div class="small muted">Sign up free before ordering${info.welcomePoints ? ` and get ${info.welcomePoints} welcome points too` : ''}.</div></div>
+          <button type="button" class="btn sm mango" data-auth="signup">Sign up</button></div></div>` : `<div class="card" style="margin-top:16px">
           <label class="check"><input type="checkbox" id="usePts" ${co.usePoints ? 'checked' : ''} ${canUse ? '' : 'disabled'}>
           <div><b>Use my points</b><div class="small muted">${canUse ? `You have ${st.me.Points} points. Use ${info.minRedeem} to ${maxPts} on this order.` : `You need at least ${info.minRedeem} points to redeem. You have ${st.me.Points}.`}</div></div></label>
           ${co.usePoints ? `<div class="row" style="margin-top:10px"><input class="input" id="ptsNum" type="number" inputmode="numeric" min="${info.minRedeem}" max="${maxPts}" value="${co.points}" style="max-width:120px" aria-label="Points to use"><span class="muted">points = −${peso0(disc)}</span></div>` : ''}
-        </div>
+        </div>`}
         <div class="card" style="margin-top:12px">
           <table class="sum"><tr><td>Items</td><td>${peso(sub)}</td></tr>
           <tr><td class="muted">Service charge</td><td>${peso(fee)}</td></tr>
           ${del ? `<tr><td class="muted">Delivery fee</td><td>${peso(del)}</td></tr>` : ''}
           ${disc ? `<tr class="minus"><td>Points</td><td>−${peso(disc)}</td></tr>` : ''}
           <tr class="total"><td>Total</td><td>${peso(total)}</td></tr></table>
-          ${earn > 0 ? `<p class="small" style="margin-top:8px;color:var(--leaf)">You'll earn <b>${earn} point${earn > 1 ? 's' : ''}</b> when this order is completed.</p>` : ''}
+          ${!guest && earn > 0 ? `<p class="small" style="margin-top:8px;color:var(--leaf)">You'll earn <b>${earn} point${earn > 1 ? 's' : ''}</b> when this order is completed.</p>` : ''}
         </div>
         ${overBudget ? `<div class="banner ${b.lock ? 'coral' : ''}" style="margin-top:12px">This order puts you over your ${b.period.toLowerCase()} budget (${peso0(b.spent)} spent of ${peso0(b.amount)}).${b.lock ? ' Your budget lock is on, so change your budget in Wallet to continue.' : ''}</div>` : ''}
-        <button class="btn block mango" id="place" style="margin-top:16px;padding:15px">Place order · ${peso(total)}</button>
+        <button class="btn block mango" id="place" style="margin-top:16px;padding:15px">${guest ? 'Order as guest' : 'Place order'} · ${peso(total)}</button>
         <p class="small muted center" style="margin-top:8px">Points can only be used for orders in the app.</p>`;
       const el = sh.el;
       el.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { keep(); changeQty(b.dataset.q, Number(b.dataset.d)); draw(); drawCartBar(); if (st.view === 'store') renderStoreRows(); });
@@ -312,24 +369,47 @@
       el.querySelectorAll('[name=pay]').forEach(r => r.onchange = () => { keep(); co.pay = r.value; draw(); });
       const up = el.querySelector('#usePts'); if (up) up.onchange = () => { keep(); co.usePoints = up.checked; co.points = maxPts; draw(); };
       const pn = el.querySelector('#ptsNum'); if (pn) pn.onchange = () => { keep(); co.points = Math.floor(Number(pn.value) || 0); draw(); };
+      el.querySelectorAll('[data-auth]').forEach(b => b.onclick = e => {
+        e.preventDefault(); keep();
+        const a = openAuth(b.dataset.auth, 'Your cart stays saved.');
+        a.afterAuth = () => { if (!st.wallet) api('myWallet').then(w => { st.wallet = w; draw(); }).catch(() => {}); draw(); };
+      });
       const gt = el.querySelector('#goTop'); if (gt) gt.onclick = e => { e.preventDefault(); sh.close(); openTopUp(); };
       el.querySelector('#place').onclick = e => busy(e.currentTarget, async () => {
         keep();
-        const order = await api('placeOrder', {
+        const payload = {
           merchantId: st.cart.merchantId, orderType: co.type, address: co.address, notes: co.notes,
           paymentMethod: co.pay, pointsToUse: co.points,
           items: Object.entries(st.cart.items).map(([productId, i]) => ({ productId, qty: i.qty })),
-        });
+        };
+        let order;
+        if (guest) {
+          order = await api('guestPlaceOrder', Object.assign(payload, { name: co.name, mobile: co.mobile }));
+          addGuestToken(order.OrderID, order.guestToken);
+          try { localStorage.setItem(GUEST_INFO, JSON.stringify({ name: co.name, mobile: co.mobile, address: co.address || g.address || '' })); } catch (e) {}
+        } else {
+          order = await api('placeOrder', payload);
+          st.me = await api('customerMe');
+        }
         st.cart = null; saveCart(); st.wallet = null;
-        st.me = await api('customerMe');
         sh.close();
         toast('Order placed! ' + order.MerchantName + ' will confirm it soon.');
+        if (guest) setTimeout(() => toast(order.hasAccount ? 'This number has an account. Log in to earn points on this order.' : 'Sign up now to earn points when this order is completed.'), 600);
         st.view = null; go('orders');
       });
-      function keep() { const a = el.querySelector('#addr'); if (a) co.address = a.value; const n = el.querySelector('#notes'); if (n) co.notes = n.value; }
+      function keep() {
+        const a = el.querySelector('#addr'); if (a) co.address = a.value;
+        const n = el.querySelector('#notes'); if (n) co.notes = n.value;
+        const gn = el.querySelector('#gname'); if (gn) co.name = gn.value;
+        const gm = el.querySelector('#gmobile'); if (gm) co.mobile = gm.value;
+      }
     };
     draw();
-    if (!st.wallet) api('myWallet').then(w => { st.wallet = w; draw(); }).catch(() => {});
+    if (st.me && !st.wallet) api('myWallet').then(w => { st.wallet = w; draw(); }).catch(() => {});
+  }
+  function earnGuest(sub) {
+    const i = S.info;
+    return Math.min(Math.floor(sub / i.pesosPerPoint) * Math.max(1, i.pointsMultiplier), i.pointsCap);
   }
 
   // ───────────── Orders ─────────────
@@ -341,17 +421,22 @@
     pollTimer = setInterval(() => { if (!document.hidden) loadOrders(true); }, 20000);
   }
   async function loadOrders(quiet) {
-    try { st.orders = await api('myOrders'); } catch (e) { if (!quiet) S.error(e); return; }
+    try {
+      if (st.me) st.orders = await api('myOrders');
+      else { const t = guestTokens(); st.orders = t.length ? await api('guestOrders', { tokens: t.map(x => x.token) }) : []; }
+    } catch (e) { if (!quiet) S.error(e); return; }
     if (st.tab !== 'orders') return;
     drawTabs();
     const active = st.orders.filter(o => o.Status !== 'Completed' && o.Status !== 'Cancelled');
     const past = st.orders.filter(o => o.Status === 'Completed' || o.Status === 'Cancelled');
-    $('#olist').innerHTML = !st.orders.length ? `<div class="empty"><h3>No orders yet</h3>Your orders show up here so you can follow them.<br><br><button class="btn" id="shopNow">Browse shops</button></div>` : `
+    const pitch = !st.me ? `<div class="banner" style="margin-bottom:14px">You're ordering as a guest. <a href="#" data-auth="signup">Sign up</a> to keep your orders safe and earn points on the ones still in progress.</div>` : '';
+    $('#olist').innerHTML = !st.orders.length ? `${pitch}<div class="empty"><h3>No orders yet</h3>${st.me ? 'Your orders show up here so you can follow them.' : 'Orders you place on this phone show up here, even without an account.'}<br><br><button class="btn" id="shopNow">Browse shops</button></div>` : pitch + `
       ${active.length ? `<div class="section-title" style="margin-top:4px"><h3>In progress</h3></div><div class="stack">${active.map(orderCard).join('')}</div>` : ''}
       ${past.length ? `<div class="section-title"><h3>Past orders</h3></div><div class="list">${past.map(o => `<div class="list-item tap" data-detail="${esc(o.OrderID)}">
         <div class="grow"><b>${esc(o.MerchantName)}</b><div class="small muted">${when(o.CreatedAt)} · ${S.itemsText(o)}</div></div>
         <div style="text-align:right"><b class="num">${peso0(o.AmountDue)}</b><div>${S.statusPill(o.Status)}</div></div></div>`).join('')}</div>` : ''}`;
     const sn = $('#shopNow'); if (sn) sn.onclick = () => go('home');
+    $$('#olist [data-auth]').forEach(b => b.onclick = e => { e.preventDefault(); openAuth(b.dataset.auth); });
     $('#olist').onclick = e => {
       const a = e.target.closest('[data-act]'), d = e.target.closest('[data-detail]');
       if (a) orderAction(a.dataset.act, a.dataset.id, a);
@@ -369,9 +454,13 @@
   }
   async function orderAction(act, id, btn) {
     const o = st.orders.find(x => x.OrderID === id);
-    if (act === 'chat') return S.openChat(id, 'Chat · ' + o.MerchantName);
+    if (act === 'chat') return S.openChat(id, 'Chat · ' + o.MerchantName, st.me ? null : tokenFor(id));
     if (act === 'detail') return showOrder(o);
     if (act === 'cancel') {
+      if (!st.me) {
+        if (!await S.confirm('Cancel this order?', 'The shop will be told right away.', 'Cancel order', true)) return;
+        return busy(btn, async () => { await api('guestCancelOrder', { orderId: id, token: tokenFor(id) }); toast('Order cancelled.'); loadOrders(); });
+      }
       if (!await S.confirm('Cancel this order?', 'Your wallet payment and points will be returned right away.', 'Cancel order', true)) return;
       busy(btn, async () => { await api('cancelMyOrder', { orderId: id }); st.me = await api('customerMe'); st.wallet = null; toast('Order cancelled. Refund returned to your wallet.'); loadOrders(); });
     }
@@ -389,6 +478,7 @@
   // ───────────── Wallet ─────────────
   async function renderWallet() {
     topbar(`<h1 class="grow" style="font-size:24px">Wallet</h1>`);
+    if (!st.me) return memberPitch('Budget your food spending', 'Top up a wallet by GCash, Maya, bank or cash, pay for orders in one tap, and set a weekly or monthly budget so you never overspend.');
     $('#page').innerHTML = '<p class="muted center" style="padding:30px">Loading wallet…</p>';
     try { [st.wallet, st.me] = await Promise.all([api('myWallet'), api('customerMe')]); } catch (e) { return S.error(e); }
     if (st.tab !== 'wallet') return;
@@ -449,6 +539,7 @@
   // ───────────── Points ─────────────
   async function renderPoints() {
     topbar(`<h1 class="grow" style="font-size:24px">Points</h1>`);
+    if (!st.me) { const i = S.info; return memberPitch('Earn points at every shop', `Get 1 point for every ${peso0(i.pesosPerPoint)} you spend, up to ${i.pointsCap} points per order. 1 point = ${peso0(i.pointValue)} off your next order at any 100 - SHOPS store.`); }
     $('#page').innerHTML = '<p class="muted center" style="padding:30px">Loading points…</p>';
     let p;
     try { p = st.points = await api('myPoints'); st.me.Points = p.points; } catch (e) { return S.error(e); }
@@ -476,6 +567,15 @@
   // ───────────── Account ─────────────
   function renderAccount() {
     topbar(`<h1 class="grow" style="font-size:24px">Account</h1>`);
+    if (!st.me) {
+      memberPitch('Your 100 - SHOPS account', 'Save your address, keep your order history, and earn points on every order. It takes less than a minute.');
+      $('#page').insertAdjacentHTML('beforeend', `<div class="list" style="margin-top:16px">
+        ${S.isStandalone() ? '' : `<div class="list-item tap" id="inst">${icon('download')}<div class="grow"><b>Install the app</b></div></div>`}
+        <div class="list-item tap" id="help"><div class="grow"><b>Help</b><div class="small muted">Contact ${esc(S.info.supportContact)}</div></div></div></div>`);
+      const i2 = $('#inst'); if (i2) i2.onclick = S.install;
+      $('#help').onclick = () => sheet('Help', `<p>Contact the 100 - SHOPS team: <b>${esc(S.info.supportContact)}</b></p>`);
+      return;
+    }
     const me = st.me;
     $('#page').innerHTML = `
       <div class="row" style="margin-bottom:18px"><div class="avatar">${S.initial(me.Name)}</div><div><h2>${esc(me.Name)}</h2><div class="muted small">${esc(me.Mobile)}</div></div></div>

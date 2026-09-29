@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>100 - SHOPS · Startup Hub for Online Products and Services</title>
+<meta name="description" content="100 local Ilonggo shops in one app. Order, pay with your wallet, earn points. Together We Grow.">
+<meta name="theme-color" content="#1E1466">
+<link rel="manifest" href="manifest-customer.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<style>
+  .hero { background: linear-gradient(135deg, #0154F0 0%, #3A1FD6 55%, #6D05D8 100%); color: #fff; padding: calc(40px + var(--safe-t)) 22px 60px; position: relative; overflow: hidden; }
+  .wrap { max-width: 720px; margin: 0 auto; position: relative; z-index: 1; text-align: center; }
+  .hero-logo { width: min(260px, 62vw); height: auto; margin: 0 auto; filter: drop-shadow(0 14px 30px rgba(20,0,80,.35)); }
+  .tag { font-size: 19px; margin: 18px auto 0; max-width: 32ch; opacity: .95; }
+  .launch { margin-top: 26px; display: inline-flex; flex-direction: column; gap: 2px; align-items: center; border-top: 2px solid rgba(255,255,255,.6); padding-top: 12px; }
+  .launch b { font-family: var(--display); font-size: 22px; white-space: nowrap; margin-left: 4px; }
+  .doors { max-width: 720px; margin: -28px auto 0; padding: 0 16px 40px; position: relative; z-index: 2; display: grid; gap: 12px; }
+  .door { display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 18px; text-decoration: none; color: var(--ink); }
+  .door:hover { border-color: var(--leaf); }
+  .door.main { background: linear-gradient(135deg, var(--leaf), var(--mango)); border-color: transparent; color: #fff; }
+  .door.main svg, .door.main h2 { color: #fff; }
+  .door svg { width: 30px; height: 30px; color: var(--forest); flex-shrink: 0; }
+  .door h2 { font-size: 19px; }
+  .foot { text-align: center; padding: 10px 20px 40px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body data-role="customer" data-no-intro>
+<header class="hero"><div class="wrap">
+  <img class="hero-logo" src="img/logo-512.png" alt="100 - SHOPS: Startup Hub for Online Products and Services">
+  <p class="tag">One hundred local Ilonggo shops in one app. Order, pay with your wallet, and earn points at every shop. Together We Grow.</p>
+  <div class="launch"><div>Launching <b id="launch">Oct 30, 2026</b></div><div class="small" style="opacity:.85">in time for Halloween and Undas</div></div>
+</div></header>
+<main class="doors">
+  <a class="door main" href="customer.html"><span id="i1"></span><div class="grow"><h2>Order from local shops</h2><div class="small">Sign up and get welcome points for your first order.</div></div></a>
+  <a class="door" href="merchant.html"><span id="i2"></span><div class="grow"><h2>I own a shop</h2><div class="small muted">Join as a founding merchant or manage your orders.</div></div></a>
+  <a class="door" href="rider.html"><span id="i3"></span><div class="grow"><h2>I want to deliver</h2><div class="small muted">Earn the delivery fee on every trip.</div></div></a>
+</main>
+<p class="foot">100 - SHOPS · Startup Hub for Online Products and Services · Iloilo City · <a href="admin.html">Admin</a></p>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+  document.getElementById('i1').innerHTML = S.icon('store');
+  document.getElementById('i2').innerHTML = S.icon('box');
+  document.getElementById('i3').innerHTML = S.icon('bike');
+  S.loadInfo().then(i => { if (i.launchDate) document.getElementById('launch').textContent = S.dateOnly(i.launchDate); }).catch(() => {});
+</script>
+</body>
+</html>

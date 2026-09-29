@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>100 - SHOPS</title>
+<meta name="description" content="Order from local Ilonggo shops. Pay with your wallet, earn points.">
+<meta name="theme-color" content="#1E1466">
+<link rel="manifest" href="manifest-customer.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="100 SHOPS">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-role="customer">
+<div id="app"><div class="empty" style="padding-top:40vh">Loading…</div></div>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  const { api, esc, peso, peso0, when, $, $$, toast, busy, sheet, icon } = S;
+  const app = $('#app');
+  const CART_KEY = '100shops_cart';
+  const st = {
+    tab: 'home', view: null, me: null, merchants: [], category: 'All', search: '', searchResults: null,
+    store: null, cart: loadCart(), orders: [], wallet: null, points: null,
+  };
+  let pollTimer = null;
+
+  function loadCart() { try { return JSON.parse(localStorage.getItem(CART_KEY)) || null; } catch (e) { return null; } }
+  function saveCart() { try { st.cart ? localStorage.setItem(CART_KEY, JSON.stringify(st.cart)) : localStorage.removeItem(CART_KEY); } catch (e) {} }
+  const cartCount = () => st.cart ? Object.values(st.cart.items).reduce((a, i) => a + i.qty, 0) : 0;
+  const cartSubtotal = () => st.cart ? Object.values(st.cart.items).reduce((a, i) => a + i.qty * i.price, 0) : 0;
+
+  // ───────────── Boot ─────────────
+  async function boot() {
+    try { await S.loadInfo(); } catch (e) { app.innerHTML = `<div class="auth"><img class="auth-logo" src="img/logo-256.png" alt="100 - SHOPS logo"><p class="auth-sub">${esc(e.message)}</p><button class="btn" onclick="location.reload()">Try again</button></div>`; return; }
+    if (!S.token()) return renderAuth();
+    try { st.me = await api('customerMe'); } catch (e) { return renderAuth(); }
+    renderShell();
+  }
+
+  // ───────────── Auth ─────────────
+  function renderAuth(mode) {
+    mode = mode || (new URLSearchParams(location.search).get('ref') ? 'signup' : 'login');
+    const ref = new URLSearchParams(location.search).get('ref') || '';
+    const info = S.info;
+    app.innerHTML = `<div class="auth">
+      <img class="auth-logo" src="img/logo-256.png" alt="100 - SHOPS logo">
+      <p class="auth-sub">Order from local Ilonggo shops. Pay with your wallet and earn points on every order.</p>
+      <div class="seg" style="margin-bottom:20px"><button data-mode="login" class="${mode === 'login' ? 'on' : ''}">Log in</button><button data-mode="signup" class="${mode === 'signup' ? 'on' : ''}">Create account</button></div>
+      ${mode === 'login' ? `
+      <form class="stack" id="f">
+        <label class="field"><span>Mobile number</span><input class="input" name="mobile" inputmode="tel" autocomplete="tel" placeholder="09171234567" required></label>
+        <label class="field"><span>Password</span><input class="input" type="password" name="password" autocomplete="current-password" required></label>
+        <button class="btn block">Log in</button>
+      </form>` : `
+      ${info.welcomePoints ? `<div class="banner" style="margin-bottom:16px"><strong>Get ${info.welcomePoints} points (${peso0(info.welcomePoints * info.pointValue)})</strong> when you sign up. Use them on your first order.</div>` : ''}
+      <form class="stack" id="f">
+        <label class="field"><span>Full name</span><input class="input" name="name" autocomplete="name" required></label>
+        <label class="field"><span>Mobile number</span><input class="input" name="mobile" inputmode="tel" autocomplete="tel" placeholder="09171234567" required></label>
+        <label class="field"><span>Delivery address</span><input class="input" name="address" autocomplete="street-address" placeholder="House no., street, barangay"></label>
+        <label class="field"><span>Password</span><input class="input" type="password" name="password" minlength="6" autocomplete="new-password" required><div class="hint">At least 6 characters.</div></label>
+        ${ref ? `<p class="small muted">Invited by shop code <b>${esc(ref)}</b></p>` : ''}
+        <button class="btn block">Create account</button>
+      </form>`}
+    </div>`;
+    $$('[data-mode]').forEach(b => b.onclick = () => renderAuth(b.dataset.mode));
+    const f = $('#f');
+    f.onsubmit = e => {
+      e.preventDefault();
+      busy(f.querySelector('button'), async () => {
+        const d = S.form(f);
+        if (mode === 'signup') d.ref = ref;
+        const r = await api(mode === 'login' ? 'customerLogin' : 'customerSignup', d);
+        S.setToken(r.token);
+        st.me = await api('customerMe');
+        if (mode === 'signup' && S.info.welcomePoints) toast(`Welcome! ${S.info.welcomePoints} points added to your account.`);
+        renderShell();
+      });
+    };
+  }
+
+  // ───────────── Shell ─────────────
+  const TABS = [
+    { id: 'home', label: 'Shops', icon: 'store' }, { id: 'orders', label: 'Orders', icon: 'orders' },
+    { id: 'wallet', label: 'Wallet', icon: 'wallet' }, { id: 'points', label: 'Points', icon: 'star' },
+    { id: 'account', label: 'Account', icon: 'user' },
+  ];
+  function renderShell() {
+    app.innerHTML = `<div class="shell"><header class="topbar" id="top"></header><main class="page" id="page"></main></div><div id="cartbar"></div>`;
+    go(st.tab);
+  }
+  function drawTabs() {
+    const active = st.orders.filter(o => o.Status !== 'Completed' && o.Status !== 'Cancelled').length;
+    S.tabbar(TABS.map(t => t.id === 'orders' && active ? Object.assign({}, t, { badge: active }) : t), st.tab, go);
+  }
+  function topbar(html) { $('#top').innerHTML = html || `<div class="brand withlogo grow"><img class="logo-sm" src="img/logo-96.png" alt=""><span style="color:var(--forest)">100 - <span>SHOPS</span></span></div>
+    ${S.isStandalone() ? '' : `<button class="btn sm ghost" id="installBtn">${icon('download')} Install</button>`}`;
+    const ib = $('#installBtn'); if (ib) ib.onclick = S.install; }
+
+  function go(tab) {
+    st.tab = tab; st.view = tab === 'home' ? st.view : null;
+    clearInterval(pollTimer);
+    window.scrollTo(0, 0);
+    drawTabs(); drawCartBar();
+    ({ home: st.view === 'store' ? renderStore : renderHome, orders: renderOrders, wallet: renderWallet, points: renderPoints, account: renderAccount })[tab]();
+  }
+
+  function drawCartBar() {
+    const n = cartCount();
+    const el = $('#cartbar');
+    if (!el) return;
+    el.innerHTML = n && st.tab === 'home' ? `<div class="cartbar"><button class="btn mango" id="openCart"><span>${n} item${n > 1 ? 's' : ''} · ${esc(st.cart.merchantName)}</span><b>${peso(cartSubtotal())}</b></button></div>` : '';
+    const b = $('#openCart'); if (b) b.onclick = openCheckout;
+  }
+
+  // ───────────── Home ─────────────
+  async function renderHome() {
+    topbar();
+    const page = $('#page');
+    const me = st.me;
+    page.innerHTML = sukiCard() + `
+      ${(S.info.announcements || []).slice(0, 2).map(a => `<div class="banner" style="margin-top:12px"><strong>${esc(a.Title)}</strong><br>${esc(a.Message)}</div>`).join('')}
+      <form class="row" id="searchForm" style="margin-top:18px"><input class="input grow" name="q" placeholder="Search cakes, flowers, food trays…" value="${esc(st.search)}" aria-label="Search products">
+      <button class="btn icon" style="background:var(--forest);color:#fff" aria-label="Search">${icon('search')}</button></form>
+      <div class="chips" style="margin-top:12px" id="cats">${['All'].concat(S.info.categories).map(c => `<button class="chip ${st.category === c ? 'on' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+      <div id="shopList" style="margin-top:14px"><p class="muted center" style="padding:20px">Loading shops…</p></div>`;
+    bindSuki();
+    if (st.merchants.length || st.searchResults) drawShops();
+    $('#searchForm').onsubmit = e => { e.preventDefault(); doSearch(e.target.q.value.trim()); };
+    $('#cats').onclick = e => { const c = e.target.closest('[data-cat]'); if (c) { st.category = c.dataset.cat; st.searchResults = null; st.search = ''; renderHome(); } };
+    try {
+      st.merchants = await api('listMerchants');
+      [st.me] = await Promise.all([api('customerMe')]);
+      if (st.tab === 'home' && !st.view) { $('.suki') && ($('.suki').outerHTML = sukiCard()); bindSuki(); drawShops(); }
+    } catch (e) { S.error(e); }
+  }
+
+  function sukiCard() {
+    const me = st.me, b = st.wallet && st.wallet.budget;
+    const budgetAmt = Number(me.BudgetAmount) || 0;
+    let meter = '';
+    if (budgetAmt > 0 && b) {
+      const pct = Math.min(100, (b.spent / budgetAmt) * 100);
+      meter = `<div class="suki-meter"><div class="track"><div class="fill ${b.spent > budgetAmt ? 'over' : ''}" style="width:${pct}%"></div></div>
+        <div class="row between"><span>${b.period === 'Monthly' ? 'This month' : 'This week'}: ${peso0(b.spent)} of ${peso0(budgetAmt)}</span><span>${b.remaining >= 0 ? peso0(b.remaining) + ' left' : 'Over budget'}</span></div></div>`;
+    } else if (budgetAmt > 0) {
+      meter = `<div class="suki-meter"><div class="track"><div class="fill" style="width:0%"></div></div><div class="row between"><span>Budget ${peso0(budgetAmt)} ${me.BudgetPeriod === 'Monthly' ? 'a month' : 'a week'}</span></div></div>`;
+    }
+    return `<section class="suki" aria-label="Your wallet">
+      <div class="suki-top"><div><div class="suki-label">Wallet balance</div><div class="suki-bal">${peso(me.Wallet)}</div></div>
+      <div class="suki-pts"><div class="suki-label">Points</div><b>${me.Points}</b><span class="small" style="opacity:.8">= ${peso0(me.Points * S.info.pointValue)}</span></div></div>
+      ${meter}
+      <div class="suki-actions"><button class="btn mango" data-suki="topup">Top up</button><button class="btn ghost" data-suki="budget">${budgetAmt ? 'Budget' : 'Set a budget'}</button></div>
+    </section>`;
+  }
+  function bindSuki() {
+    $$('[data-suki]').forEach(b => b.onclick = () => b.dataset.suki === 'topup' ? openTopUp() : openBudget());
+    if (!st.wallet) api('myWallet').then(w => { st.wallet = w; const s = $('.suki'); if (s && st.tab === 'home' && !st.view) { s.outerHTML = sukiCard(); bindSuki(); } }).catch(() => {});
+  }
+
+  function drawShops() {
+    const el = $('#shopList'); if (!el) return;
+    if (st.searchResults) {
+      el.innerHTML = `<div class="row between" style="margin-bottom:10px"><h3>Results for “${esc(st.search)}”</h3><button class="btn sm ghost" id="clearSearch">Clear</button></div>` +
+        (st.searchResults.length ? '<div class="list">' + st.searchResults.map(p => `<div class="list-item tap" data-shop="${esc(p.MerchantID)}">
+          ${p.ImageURL ? `<img class="thumb" src="${esc(p.ImageURL)}" alt="" loading="lazy">` : `<div class="avatar">${S.initial(p.Name)}</div>`}
+          <div class="grow"><b>${esc(p.Name)}</b><div class="small muted">${esc(p.BusinessName)}${p.IsOpen ? '' : ' · Closed'}</div></div><b class="num">${peso0(p.Price)}</b></div>`).join('') + '</div>'
+        : `<div class="empty"><h3>Nothing found</h3>Try a different word, like “cake” or “lechon”.</div>`);
+      $('#clearSearch').onclick = () => { st.searchResults = null; st.search = ''; renderHome(); };
+    } else {
+      const list = st.merchants.filter(m => st.category === 'All' || m.Category === st.category);
+      el.innerHTML = list.length ? '<div class="list">' + list.map(m => `<div class="list-item tap" data-shop="${esc(m.MerchantID)}">
+        <div class="avatar">${m.LogoURL ? `<img src="${esc(m.LogoURL)}" alt="">` : S.initial(m.BusinessName)}</div>
+        <div class="grow"><b>${esc(m.BusinessName)}</b><div class="small muted">${esc(m.Category)}${m.Address ? ' · ' + esc(m.Address) : ''}</div></div>
+        ${m.IsOpen ? '<span class="pill">Open</span>' : '<span class="pill grey">Closed</span>'}</div>`).join('') + '</div>'
+        : `<div class="empty"><h3>No shops here yet</h3>${st.category === 'All' ? 'Shops are joining for the launch on ' + esc(S.dateOnly(S.info.launchDate)) + '.' : 'Try another category.'}</div>`;
+    }
+    el.onclick = e => { const s = e.target.closest('[data-shop]'); if (s) openStore(s.dataset.shop); };
+  }
+
+  async function doSearch(q) {
+    st.search = q;
+    if (q.length < 2) { st.searchResults = null; return drawShops(); }
+    try { st.searchResults = await api('searchProducts', { q }); drawShops(); } catch (e) { S.error(e); }
+  }
+
+  // ───────────── Store ─────────────
+  async function openStore(id) {
+    st.view = 'store';
+    st.store = { loading: true, id };
+    renderStore();
+    try { st.store = await api('getStore', { merchantId: id }); renderStore(); } catch (e) { S.error(e); st.view = null; renderHome(); }
+  }
+  function renderStore() {
+    window.scrollTo(0, 0);
+    const s = st.store;
+    topbar(`<button class="btn icon" id="back" aria-label="Back to shops">${icon('back')}</button><div class="grow"><b>${s.loading ? 'Loading…' : esc(s.store.BusinessName)}</b></div>`);
+    $('#back').onclick = () => { st.view = null; renderHome(); drawCartBar(); };
+    if (s.loading) { $('#page').innerHTML = '<p class="muted center" style="padding:30px">Loading shop…</p>'; return; }
+    const m = s.store;
+    const groups = {};
+    s.products.forEach(p => { const g = p.Category || 'Products'; (groups[g] = groups[g] || []).push(p); });
+    $('#page').innerHTML = `
+      <div class="row" style="margin-bottom:12px"><div class="avatar" style="width:60px;height:60px">${m.LogoURL ? `<img src="${esc(m.LogoURL)}" alt="">` : S.initial(m.BusinessName)}</div>
+      <div class="grow"><h2>${esc(m.BusinessName)}</h2><div class="small muted">${esc(m.Category)}${m.Address ? ' · ' + esc(m.Address) : ''}</div></div></div>
+      ${m.Description ? `<p class="muted">${esc(m.Description)}</p>` : ''}
+      ${m.IsOpen ? '' : '<div class="banner coral" style="margin-top:12px">This shop is closed right now. You can browse, but ordering opens when they are back.</div>'}
+      ${Object.keys(groups).map(g => `<div class="section-title"><h3>${esc(g)}</h3></div><div class="list">${groups[g].map(p => productRow(p, m)).join('')}</div>`).join('')
+        || '<div class="empty"><h3>No products yet</h3>This shop is still setting up.</div>'}
+      <div style="height:70px"></div>`;
+    $('#page').onclick = e => {
+      const b = e.target.closest('[data-add],[data-dec]');
+      if (!b) return;
+      const p = s.products.find(x => x.ProductID === (b.dataset.add || b.dataset.dec));
+      if (b.dataset.add) addToCart(p, m); else changeQty(p.ProductID, -1);
+      renderStoreRows();
+    };
+    drawCartBar();
+  }
+  function productRow(p, m) {
+    const inCart = st.cart && st.cart.merchantId === m.MerchantID && st.cart.items[p.ProductID];
+    return `<div class="list-item" data-row="${esc(p.ProductID)}">
+      ${p.ImageURL ? `<img class="thumb" src="${esc(p.ImageURL)}" alt="" loading="lazy">` : ''}
+      <div class="grow"><b>${esc(p.Name)}</b>${p.Description ? `<div class="small muted">${esc(p.Description)}</div>` : ''}
+      <div class="num" style="margin-top:3px;color:var(--forest);font-weight:700">${peso0(p.Price)}</div>
+      ${p.Stock !== null && p.Stock <= 5 ? `<div class="small" style="color:var(--coral)">${p.Stock} left</div>` : ''}</div>
+      ${!m.IsOpen ? '' : inCart ? `<div class="qty"><button data-dec="${esc(p.ProductID)}" aria-label="Remove one">−</button><span>${inCart.qty}</span><button data-add="${esc(p.ProductID)}" aria-label="Add one">+</button></div>`
+        : `<button class="add-btn" data-add="${esc(p.ProductID)}" aria-label="Add ${esc(p.Name)}">+</button>`}</div>`;
+  }
+  function renderStoreRows() {
+    st.store.products.forEach(p => { const row = $(`[data-row="${CSS.escape(p.ProductID)}"]`); if (row) row.outerHTML = productRow(p, st.store.store); });
+    drawCartBar();
+  }
+  async function addToCart(p, m) {
+    if (st.cart && st.cart.merchantId !== m.MerchantID && cartCount()) {
+      const ok = await S.confirm('Start a new cart?', `Your cart has items from ${st.cart.merchantName}. One order can only come from one shop. Clear it and add this item?`, 'Clear and add');
+      if (!ok) return;
+      st.cart = null;
+    }
+    if (!st.cart) st.cart = { merchantId: m.MerchantID, merchantName: m.BusinessName, items: {} };
+    const it = st.cart.items[p.ProductID] || { name: p.Name, price: p.Price, qty: 0 };
+    if (p.Stock !== null && it.qty >= p.Stock) return toast('Only ' + p.Stock + ' available.', 'error');
+    it.qty++; it.price = p.Price;
+    st.cart.items[p.ProductID] = it;
+    saveCart(); S.vibrate(15);
+    if (st.view === 'store') renderStoreRows();
+  }
+  function changeQty(id, d) {
+    const it = st.cart && st.cart.items[id]; if (!it) return;
+    it.qty += d;
+    if (it.qty <= 0) delete st.cart.items[id];
+    if (!Object.keys(st.cart.items).length) st.cart = null;
+    saveCart();
+  }
+
+  // ───────────── Checkout ─────────────
+  function openCheckout() {
+    const info = S.info;
+    const co = { type: 'Delivery', pay: st.me.Wallet > 0 ? 'Wallet' : 'Cash', usePoints: false, points: 0 };
+    const sh = sheet('Your order', '<div id="co"></div>');
+    const draw = () => {
+      if (!st.cart) { sh.close(); drawCartBar(); if (st.view === 'store') renderStoreRows(); return; }
+      const sub = cartSubtotal();
+      const fee = info.serviceFee, del = co.type === 'Delivery' ? info.deliveryFee : 0;
+      const maxPts = Math.min(st.me.Points, Math.floor(sub / info.pointValue));
+      const canUse = maxPts >= info.minRedeem;
+      if (!canUse) co.usePoints = false;
+      co.points = co.usePoints ? Math.max(info.minRedeem, Math.min(co.points || maxPts, maxPts)) : 0;
+      const disc = co.points * info.pointValue;
+      const total = sub + fee + del - disc;
+      const earn = Math.min(Math.floor((sub - disc) / info.pesosPerPoint) * Math.max(1, info.pointsMultiplier), info.pointsCap);
+      const b = st.wallet && st.wallet.budget;
+      const overBudget = b && b.amount > 0 && b.spent + total > b.amount;
+      sh.el.querySelector('#co').innerHTML = `
+        <p class="small muted" style="margin-bottom:10px">From <b>${esc(st.cart.merchantName)}</b></p>
+        <div class="list">${Object.entries(st.cart.items).map(([id, i]) => `<div class="list-item"><div class="grow"><b>${esc(i.name)}</b><div class="small muted">${peso0(i.price)} each</div></div>
+          <div class="qty"><button data-q="${esc(id)}" data-d="-1" aria-label="Less">−</button><span>${i.qty}</span><button data-q="${esc(id)}" data-d="1" aria-label="More">+</button></div></div>`).join('')}</div>
+        <div class="seg" style="margin-top:16px"><button data-type="Delivery" class="${co.type === 'Delivery' ? 'on' : ''}">Delivery</button><button data-type="Pickup" class="${co.type === 'Pickup' ? 'on' : ''}">Pick up at shop</button></div>
+        ${co.type === 'Delivery' ? `<label class="field" style="margin-top:12px"><span>Deliver to</span><input class="input" id="addr" value="${esc(co.address !== undefined ? co.address : st.me.Address)}" placeholder="House no., street, barangay"></label>` : ''}
+        <label class="field" style="margin-top:12px"><span>Note to the shop (optional)</span><input class="input" id="notes" value="${esc(co.notes || '')}" placeholder="e.g. Happy birthday message on the cake"></label>
+        <h3 style="margin:18px 0 8px">Pay with</h3>
+        <div class="choice two">
+          <label><input type="radio" name="pay" value="Wallet" ${co.pay === 'Wallet' ? 'checked' : ''}><strong>Wallet</strong><span class="small muted">${peso(st.me.Wallet)} available</span></label>
+          <label><input type="radio" name="pay" value="Cash" ${co.pay === 'Cash' ? 'checked' : ''}><strong>Cash</strong><span class="small muted">${co.type === 'Delivery' ? 'Pay the rider' : 'Pay at the shop'}</span></label>
+        </div>
+        ${co.pay === 'Wallet' && st.me.Wallet < total ? `<div class="banner coral" style="margin-top:10px">Your wallet is short by ${peso(total - st.me.Wallet)}. <a href="#" id="goTop">Top up</a> or pay with cash.</div>` : ''}
+        <div class="card" style="margin-top:16px">
+          <label class="check"><input type="checkbox" id="usePts" ${co.usePoints ? 'checked' : ''} ${canUse ? '' : 'disabled'}>
+          <div><b>Use my points</b><div class="small muted">${canUse ? `You have ${st.me.Points} points. Use ${info.minRedeem} to ${maxPts} on this order.` : `You need at least ${info.minRedeem} points to redeem. You have ${st.me.Points}.`}</div></div></label>
+          ${co.usePoints ? `<div class="row" style="margin-top:10px"><input class="input" id="ptsNum" type="number" inputmode="numeric" min="${info.minRedeem}" max="${maxPts}" value="${co.points}" style="max-width:120px" aria-label="Points to use"><span class="muted">points = −${peso0(disc)}</span></div>` : ''}
+        </div>
+        <div class="card" style="margin-top:12px">
+          <table class="sum"><tr><td>Items</td><td>${peso(sub)}</td></tr>
+          <tr><td class="muted">Service charge</td><td>${peso(fee)}</td></tr>
+          ${del ? `<tr><td class="muted">Delivery fee</td><td>${peso(del)}</td></tr>` : ''}
+          ${disc ? `<tr class="minus"><td>Points</td><td>−${peso(disc)}</td></tr>` : ''}
+          <tr class="total"><td>Total</td><td>${peso(total)}</td></tr></table>
+          ${earn > 0 ? `<p class="small" style="margin-top:8px;color:var(--leaf)">You'll earn <b>${earn} point${earn > 1 ? 's' : ''}</b> when this order is completed.</p>` : ''}
+        </div>
+        ${overBudget ? `<div class="banner ${b.lock ? 'coral' : ''}" style="margin-top:12px">This order puts you over your ${b.period.toLowerCase()} budget (${peso0(b.spent)} spent of ${peso0(b.amount)}).${b.lock ? ' Your budget lock is on, so change your budget in Wallet to continue.' : ''}</div>` : ''}
+        <button class="btn block mango" id="place" style="margin-top:16px;padding:15px">Place order · ${peso(total)}</button>
+        <p class="small muted center" style="margin-top:8px">Points can only be used for orders in the app.</p>`;
+      const el = sh.el;
+      el.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { keep(); changeQty(b.dataset.q, Number(b.dataset.d)); draw(); drawCartBar(); if (st.view === 'store') renderStoreRows(); });
+      el.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { keep(); co.type = b.dataset.type; draw(); });
+      el.querySelectorAll('[name=pay]').forEach(r => r.onchange = () => { keep(); co.pay = r.value; draw(); });
+      const up = el.querySelector('#usePts'); if (up) up.onchange = () => { keep(); co.usePoints = up.checked; co.points = maxPts; draw(); };
+      const pn = el.querySelector('#ptsNum'); if (pn) pn.onchange = () => { keep(); co.points = Math.floor(Number(pn.value) || 0); draw(); };
+      const gt = el.querySelector('#goTop'); if (gt) gt.onclick = e => { e.preventDefault(); sh.close(); openTopUp(); };
+      el.querySelector('#place').onclick = e => busy(e.currentTarget, async () => {
+        keep();
+        const order = await api('placeOrder', {
+          merchantId: st.cart.merchantId, orderType: co.type, address: co.address, notes: co.notes,
+          paymentMethod: co.pay, pointsToUse: co.points,
+          items: Object.entries(st.cart.items).map(([productId, i]) => ({ productId, qty: i.qty })),
+        });
+        st.cart = null; saveCart(); st.wallet = null;
+        st.me = await api('customerMe');
+        sh.close();
+        toast('Order placed! ' + order.MerchantName + ' will confirm it soon.');
+        st.view = null; go('orders');
+      });
+      function keep() { const a = el.querySelector('#addr'); if (a) co.address = a.value; const n = el.querySelector('#notes'); if (n) co.notes = n.value; }
+    };
+    draw();
+    if (!st.wallet) api('myWallet').then(w => { st.wallet = w; draw(); }).catch(() => {});
+  }
+
+  // ───────────── Orders ─────────────
+  async function renderOrders() {
+    topbar(`<h1 class="grow" style="font-size:24px">Orders</h1><button class="btn icon" id="ref" aria-label="Refresh">${icon('refresh')}</button>`);
+    $('#ref').onclick = loadOrders;
+    $('#page').innerHTML = '<div id="olist"><p class="muted center" style="padding:30px">Loading orders…</p></div>';
+    await loadOrders();
+    pollTimer = setInterval(() => { if (!document.hidden) loadOrders(true); }, 20000);
+  }
+  async function loadOrders(quiet) {
+    try { st.orders = await api('myOrders'); } catch (e) { if (!quiet) S.error(e); return; }
+    if (st.tab !== 'orders') return;
+    drawTabs();
+    const active = st.orders.filter(o => o.Status !== 'Completed' && o.Status !== 'Cancelled');
+    const past = st.orders.filter(o => o.Status === 'Completed' || o.Status === 'Cancelled');
+    $('#olist').innerHTML = !st.orders.length ? `<div class="empty"><h3>No orders yet</h3>Your orders show up here so you can follow them.<br><br><button class="btn" id="shopNow">Browse shops</button></div>` : `
+      ${active.length ? `<div class="section-title" style="margin-top:4px"><h3>In progress</h3></div><div class="stack">${active.map(orderCard).join('')}</div>` : ''}
+      ${past.length ? `<div class="section-title"><h3>Past orders</h3></div><div class="list">${past.map(o => `<div class="list-item tap" data-detail="${esc(o.OrderID)}">
+        <div class="grow"><b>${esc(o.MerchantName)}</b><div class="small muted">${when(o.CreatedAt)} · ${S.itemsText(o)}</div></div>
+        <div style="text-align:right"><b class="num">${peso0(o.AmountDue)}</b><div>${S.statusPill(o.Status)}</div></div></div>`).join('')}</div>` : ''}`;
+    const sn = $('#shopNow'); if (sn) sn.onclick = () => go('home');
+    $('#olist').onclick = e => {
+      const a = e.target.closest('[data-act]'), d = e.target.closest('[data-detail]');
+      if (a) orderAction(a.dataset.act, a.dataset.id, a);
+      else if (d) showOrder(st.orders.find(o => o.OrderID === d.dataset.detail));
+    };
+  }
+  function orderCard(o) {
+    return `<div class="card"><div class="row between"><b>${esc(o.MerchantName)}</b>${S.statusPill(o.Status)}</div>
+      ${S.steps(o)}<p class="small" style="color:var(--forest);font-weight:600">${esc(S.statusText(o))}</p>
+      <p class="small muted" style="margin-top:4px">${S.itemsText(o)}</p>
+      <div class="row between" style="margin-top:12px"><span class="num" style="font-weight:700">${peso(o.AmountDue)} <span class="small muted">${o.PaymentMethod === 'Cash' ? 'cash' : 'paid by wallet'}</span></span>
+      <div class="row"><button class="btn sm ghost" data-act="detail" data-id="${esc(o.OrderID)}">Details</button>
+      <button class="btn sm" data-act="chat" data-id="${esc(o.OrderID)}">${icon('chat')} Chat</button></div></div>
+      ${o.Status === 'Pending' ? `<button class="btn sm danger block" style="margin-top:10px" data-act="cancel" data-id="${esc(o.OrderID)}">Cancel order</button>` : ''}</div>`;
+  }
+  async function orderAction(act, id, btn) {
+    const o = st.orders.find(x => x.OrderID === id);
+    if (act === 'chat') return S.openChat(id, 'Chat · ' + o.MerchantName);
+    if (act === 'detail') return showOrder(o);
+    if (act === 'cancel') {
+      if (!await S.confirm('Cancel this order?', 'Your wallet payment and points will be returned right away.', 'Cancel order', true)) return;
+      busy(btn, async () => { await api('cancelMyOrder', { orderId: id }); st.me = await api('customerMe'); st.wallet = null; toast('Order cancelled. Refund returned to your wallet.'); loadOrders(); });
+    }
+  }
+  function showOrder(o) {
+    sheet(o.MerchantName, `<p class="small muted">Order ${esc(o.OrderID)} · ${when(o.CreatedAt)}</p>
+      <div style="margin:10px 0">${S.statusPill(o.Status)} <span class="small">${esc(S.statusText(o))}</span></div>
+      ${o.CancelReason ? `<div class="banner coral" style="margin-bottom:10px">${esc(o.CancelReason)}</div>` : ''}
+      <div class="card">${S.orderSummary(o)}</div>
+      <p class="small muted" style="margin-top:10px">${o.OrderType === 'Delivery' ? 'Deliver to: ' : ''}${esc(o.Address)}</p>
+      ${o.RiderName ? `<p class="small" style="margin-top:6px">Rider: <b>${esc(o.RiderName)}</b> ${o.RiderMobile ? `· <a href="tel:${esc(o.RiderMobile)}">${esc(o.RiderMobile)}</a>` : ''}</p>` : ''}
+      ${o.PointsEarned ? `<p class="small" style="margin-top:6px;color:var(--leaf)">You earned ${o.PointsEarned} points on this order.</p>` : ''}`);
+  }
+
+  // ───────────── Wallet ─────────────
+  async function renderWallet() {
+    topbar(`<h1 class="grow" style="font-size:24px">Wallet</h1>`);
+    $('#page').innerHTML = '<p class="muted center" style="padding:30px">Loading wallet…</p>';
+    try { [st.wallet, st.me] = await Promise.all([api('myWallet'), api('customerMe')]); } catch (e) { return S.error(e); }
+    if (st.tab !== 'wallet') return;
+    const w = st.wallet;
+    const pend = w.topUps.filter(t => t.Status === 'Pending');
+    $('#page').innerHTML = sukiCard() + `
+      ${pend.length ? `<div class="banner" style="margin-top:12px"><strong>${pend.length} top-up${pend.length > 1 ? 's' : ''} waiting for approval</strong> (${peso(pend.reduce((a, t) => a + t.Amount, 0))}). We'll add it to your wallet once we confirm your payment.</div>` : ''}
+      <div class="section-title"><h3>Wallet history</h3></div>
+      ${w.ledger.length ? '<div class="list">' + w.ledger.map(l => `<div class="list-item"><div class="grow"><b>${esc(l.Type)}</b><div class="small muted">${esc(l.Description)} · ${when(l.CreatedAt)}</div></div>
+        <b class="num" style="color:${l.Amount >= 0 ? 'var(--leaf)' : 'var(--ink)'}">${l.Amount >= 0 ? '+' : '−'}${peso(Math.abs(l.Amount))}</b></div>`).join('') + '</div>'
+        : '<div class="empty">No wallet activity yet. Top up to pay for orders without cash.</div>'}
+      ${w.topUps.length ? `<div class="section-title"><h3>Top-up requests</h3></div><div class="list">${w.topUps.map(t => `<div class="list-item"><div class="grow"><b>${peso(t.Amount)}</b> <span class="small muted">via ${esc(t.Method)}</span>
+        <div class="small muted">${when(t.RequestedAt)}${t.Reference ? ' · Ref ' + esc(t.Reference) : ''}${t.Note ? ' · ' + esc(t.Note) : ''}</div></div>
+        <span class="pill ${t.Status === 'Approved' ? '' : t.Status === 'Rejected' ? 'coral' : 'mango'}">${esc(t.Status)}</span></div>`).join('')}</div>` : ''}`;
+    bindSuki();
+  }
+
+  function openTopUp() {
+    const info = S.info;
+    const sh = sheet('Top up your wallet', `<form class="stack" id="tu">
+      <div class="banner green small">${esc((st.wallet && st.wallet.paymentInstructions) || info.paymentInstructions)}</div>
+      <label class="field"><span>Amount</span><input class="input" name="amount" type="number" inputmode="decimal" min="${info.minTopUp}" step="1" required placeholder="Minimum ${info.minTopUp}"></label>
+      <div class="chips">${[200, 500, 1000, 2000].map(a => `<button type="button" class="chip" data-amt="${a}">${peso0(a)}</button>`).join('')}</div>
+      <label class="field"><span>How did you pay?</span><select class="input" name="method" id="tuMethod">
+        <option>GCash</option><option>Maya</option><option>Bank Transfer</option><option value="Cash">Cash at the 100 - SHOPS office</option></select></label>
+      <label class="field" id="refField"><span>Reference number</span><input class="input" name="reference" placeholder="From your payment receipt"><div class="hint">We match this number with our records before adding the money.</div></label>
+      <button class="btn block mango">Send top-up request</button>
+      <p class="small muted center">Your wallet is for orders in 100 - SHOPS only. Max balance ${peso0(info.maxWallet)}.</p></form>`);
+    const f = sh.el.querySelector('#tu');
+    sh.el.querySelectorAll('[data-amt]').forEach(b => b.onclick = () => { f.amount.value = b.dataset.amt; });
+    f.method.onchange = () => { $('#refField', sh.el).classList.toggle('hidden', f.method.value === 'Cash'); };
+    f.onsubmit = e => { e.preventDefault(); busy(f.querySelector('button.mango'), async () => {
+      await api('requestTopUp', S.form(f)); sh.close(); st.wallet = null;
+      toast('Top-up request sent. We\'ll add it once your payment is confirmed.');
+      if (st.tab === 'wallet') renderWallet();
+    }); };
+  }
+
+  function openBudget() {
+    const me = st.me;
+    const sh = sheet('Food budget', `<form class="stack" id="bf">
+      <p class="muted">Set how much you want to spend on orders. We'll track it on your wallet card and warn you before you go over.</p>
+      <div class="seg" id="per"><button type="button" data-p="Weekly" class="${me.BudgetPeriod !== 'Monthly' ? 'on' : ''}">Weekly</button><button type="button" data-p="Monthly" class="${me.BudgetPeriod === 'Monthly' ? 'on' : ''}">Monthly</button></div>
+      <label class="field"><span>Budget amount</span><input class="input" name="amount" type="number" inputmode="decimal" min="0" value="${Number(me.BudgetAmount) || ''}" placeholder="e.g. 1500"><div class="hint">Set to 0 to turn the budget off.</div></label>
+      <label class="check"><input type="checkbox" name="lock" ${me.BudgetLock ? 'checked' : ''}><div><b>Stop me from going over</b><div class="small muted">Orders that go over the budget will be blocked until the next week or month.</div></div></label>
+      <button class="btn block">Save budget</button></form>`);
+    const f = sh.el.querySelector('#bf');
+    let period = me.BudgetPeriod === 'Monthly' ? 'Monthly' : 'Weekly';
+    sh.el.querySelector('#per').onclick = e => { const b = e.target.closest('[data-p]'); if (!b) return; period = b.dataset.p; sh.el.querySelectorAll('[data-p]').forEach(x => x.classList.toggle('on', x === b)); };
+    f.onsubmit = e => { e.preventDefault(); busy(f.querySelector('button.btn.block'), async () => {
+      const b = await api('setBudget', { amount: f.amount.value || 0, period, lock: f.lock.checked });
+      st.me = await api('customerMe'); if (st.wallet) st.wallet.budget = b;
+      sh.close(); toast(b.amount ? 'Budget saved.' : 'Budget turned off.');
+      go(st.tab);
+    }); };
+  }
+
+  // ───────────── Points ─────────────
+  async function renderPoints() {
+    topbar(`<h1 class="grow" style="font-size:24px">Points</h1>`);
+    $('#page').innerHTML = '<p class="muted center" style="padding:30px">Loading points…</p>';
+    let p;
+    try { p = st.points = await api('myPoints'); st.me.Points = p.points; } catch (e) { return S.error(e); }
+    if (st.tab !== 'points') return;
+    const r = p.rules;
+    $('#page').innerHTML = `
+      <div class="card center" style="padding:26px 16px">
+        <div class="num" style="font-size:56px;font-weight:800;color:var(--forest);line-height:1">${p.points}</div>
+        <div class="muted" style="margin-top:4px">points · worth ${peso0(p.pesoValue)} on your next order</div>
+        ${p.expiringSoon ? `<div class="pill coral" style="margin-top:12px">${p.expiringSoon} points expire within a month</div>` : ''}
+        ${r.multiplier > 1 ? `<div class="pill mango" style="margin-top:12px">${r.multiplier}× points promo is on!</div>` : ''}
+      </div>
+      <div class="section-title"><h3>How points work</h3></div>
+      <div class="list">
+        <div class="list-item"><div class="avatar" style="width:40px;height:40px;padding:9px">${icon('coins')}</div><div class="grow"><b>Earn 1 point for every ${peso0(r.pesosPerPoint)}</b><div class="small muted">Up to ${r.cap} points per order, added when your order is completed.</div></div></div>
+        <div class="list-item"><div class="avatar" style="width:40px;height:40px;padding:9px">${icon('star')}</div><div class="grow"><b>1 point = ${peso0(r.pointValue)}</b><div class="small muted">Use at least ${r.minRedeem} points at checkout, at any shop in the app.</div></div></div>
+        <div class="list-item"><div class="avatar" style="width:40px;height:40px;padding:9px">${icon('store')}</div><div class="grow"><b>In-app orders only</b><div class="small muted">Points can't be used for walk-in purchases. Order in the app and choose pick up instead.</div></div></div>
+        <div class="list-item"><div class="avatar" style="width:40px;height:40px;padding:9px">${icon('refresh')}</div><div class="grow"><b>Points last ${r.expiryMonths} months</b><div class="small muted">Your oldest points are used first.</div></div></div>
+      </div>
+      <div class="section-title"><h3>History</h3></div>
+      ${p.history.length ? '<div class="list">' + p.history.map(h => `<div class="list-item"><div class="grow"><b>${esc(h.Type)}</b><div class="small muted">${esc(h.Description)} · ${when(h.CreatedAt)}</div></div>
+        <b class="num" style="color:${h.Points > 0 ? 'var(--leaf)' : 'var(--ink)'}">${h.Points > 0 ? '+' : ''}${h.Points}</b></div>`).join('') + '</div>' : '<div class="empty">No points yet. Complete an order to start earning.</div>'}`;
+  }
+
+  // ───────────── Account ─────────────
+  function renderAccount() {
+    topbar(`<h1 class="grow" style="font-size:24px">Account</h1>`);
+    const me = st.me;
+    $('#page').innerHTML = `
+      <div class="row" style="margin-bottom:18px"><div class="avatar">${S.initial(me.Name)}</div><div><h2>${esc(me.Name)}</h2><div class="muted small">${esc(me.Mobile)}</div></div></div>
+      <form class="stack card" id="pf">
+        <label class="field"><span>Full name</span><input class="input" name="name" value="${esc(me.Name)}" required></label>
+        <label class="field"><span>Email (optional)</span><input class="input" name="email" type="email" value="${esc(me.Email)}"></label>
+        <label class="field"><span>Default delivery address</span><input class="input" name="address" value="${esc(me.Address)}"></label>
+        <button class="btn">Save profile</button></form>
+      <div class="list" style="margin-top:16px">
+        ${S.isStandalone() ? '' : `<div class="list-item tap" id="inst">${icon('download')}<div class="grow"><b>Install the app</b><div class="small muted">Add 100 - SHOPS to your home screen</div></div></div>`}
+        <div class="list-item tap" id="pw"><div class="grow"><b>Change password</b></div></div>
+        <div class="list-item tap" id="help"><div class="grow"><b>Help</b><div class="small muted">Contact ${esc(S.info.supportContact)}</div></div></div>
+        <div class="list-item tap" id="out"><div class="grow"><b style="color:var(--coral)">Log out</b></div></div>
+      </div>`;
+    const f = $('#pf');
+    f.onsubmit = e => { e.preventDefault(); busy(f.querySelector('button'), async () => { st.me = await api('updateProfile', S.form(f)); toast('Profile saved.'); }); };
+    const inst = $('#inst'); if (inst) inst.onclick = S.install;
+    $('#pw').onclick = S.changePassword;
+    $('#help').onclick = () => sheet('Help', `<p>For questions about orders, top-ups or points, contact the 100 - SHOPS team:</p><p style="margin-top:10px"><b>${esc(S.info.supportContact)}</b></p><p class="small muted" style="margin-top:14px">For a specific order, use the Chat button on the order so the shop and rider can see it too.</p>`);
+    $('#out').onclick = async () => { if (await S.confirm('Log out?', 'You can log back in with your mobile number and password.', 'Log out')) S.logout(); };
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

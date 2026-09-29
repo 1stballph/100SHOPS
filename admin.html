@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>100 - SHOPS Admin</title>
+<meta name="theme-color" content="#1E1466">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest-admin.json">
+<link rel="icon" href="icons/icon-admin-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-role="admin" data-no-intro>
+<div id="app"><div class="empty" style="padding-top:40vh">Loading…</div></div>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  const { api, esc, peso, peso0, when, $, $$, toast, busy, sheet, icon } = S;
+  const app = $('#app');
+  const st = { view: 'dashboard', dash: null };
+
+  const MENU = [
+    ['dashboard', 'Dashboard'], ['merchants', 'Merchants'], ['topups', 'Wallet top-ups'], ['orders', 'Orders'],
+    ['settlements', 'Settlements'], ['pool', 'Community pool'], ['riders', 'Riders'], ['customers', 'Customers'],
+    ['announcements', 'Announcements'], ['settings', 'Settings'],
+  ];
+
+  function boot() {
+    if (!S.token()) return renderLogin();
+    renderShell();
+  }
+
+  function renderLogin() {
+    app.innerHTML = `<div class="auth"><img class="auth-logo" src="img/logo-256.png" alt="100 - SHOPS logo"><p class="auth-sub">Admin portal</p>
+      <form class="stack" id="f"><label class="field"><span>Username</span><input class="input" name="username" autocomplete="username" required></label>
+      <label class="field"><span>Password</span><input class="input" type="password" name="password" autocomplete="current-password" required></label>
+      <button class="btn block">Log in</button></form></div>`;
+    const f = $('#f');
+    f.onsubmit = e => { e.preventDefault(); busy(f.querySelector('button'), async () => {
+      const r = await api('adminLogin', S.form(f)); S.setToken(r.token); renderShell();
+    }); };
+  }
+
+  function renderShell() {
+    app.innerHTML = `<div class="admin"><nav class="side" id="side" aria-label="Admin sections"><div class="brand"><img src="img/logo-96.png" alt="">100 - <span>SHOPS</span></div><div id="menu"></div>
+      <div style="margin-top:24px;border-top:1px solid rgba(255,255,255,.12);padding-top:12px">
+      <button id="pw">Change password</button><button id="out">Log out</button></div></nav>
+      <main class="main"><div class="main-head"><div class="row"><button class="btn icon menu-btn" id="menuBtn" aria-label="Menu">${icon('menu')}</button><h1 id="title"></h1></div><div id="actions" class="row"></div></div><div id="view"></div></main></div>`;
+    $('#pw').onclick = S.changePassword;
+    $('#out').onclick = S.logout;
+    $('#menuBtn').onclick = () => $('#side').classList.toggle('open');
+    show(st.view);
+    refreshBadges();
+  }
+  function drawMenu() {
+    const d = st.dash || {};
+    const badge = { merchants: d.merchantsPending, topups: d.pendingTopUps, riders: d.ridersPending, orders: d.activeOrders };
+    $('#menu').innerHTML = MENU.map(([id, label]) => `<button data-v="${id}" class="${st.view === id ? 'on' : ''}">${label}${badge[id] ? `<span class="badge">${badge[id]}</span>` : ''}</button>`).join('');
+    $('#menu').onclick = e => { const b = e.target.closest('[data-v]'); if (b) { $('#side').classList.remove('open'); show(b.dataset.v); } };
+  }
+  async function refreshBadges() { try { st.dash = await api('adminDashboard'); drawMenu(); } catch (e) {} }
+
+  function show(view) {
+    st.view = view; drawMenu();
+    $('#title').textContent = MENU.find(m => m[0] === view)[1];
+    $('#actions').innerHTML = '';
+    $('#view').innerHTML = '<p class="muted" style="padding:20px 0">Loading…</p>';
+    VIEWS[view]().catch(S.error);
+  }
+  const reload = () => { show(st.view); refreshBadges(); };
+
+  function table(cols, rows, empty) {
+    if (!rows.length) return `<div class="card empty">${esc(empty || 'Nothing here.')}</div>`;
+    return `<div class="table-wrap"><table class="data"><thead><tr>${cols.map(c => `<th class="${c.r ? 'r' : ''}">${esc(c.h)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(r => `<tr>${cols.map(c => `<td class="${c.r ? 'r' : ''}">${c.f(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  }
+  const btn = (label, data, cls) => `<button class="btn sm ${cls || ''}" ${Object.entries(data).map(([k, v]) => `data-${k}="${esc(v)}"`).join(' ')}>${esc(label)}</button>`;
+  const stat = (v, l) => `<div class="stat"><b>${v}</b><span>${esc(l)}</span></div>`;
+
+  const VIEWS = {
+    // ───────────── Dashboard ─────────────
+    async dashboard() {
+      const d = st.dash = await api('adminDashboard'); drawMenu();
+      $('#actions').innerHTML = `<button class="btn sm ghost" id="rf">${icon('refresh')} Refresh</button>`;
+      $('#rf').onclick = reload;
+      const todo = [];
+      if (d.merchantsPending) todo.push(`<b>${d.merchantsPending}</b> merchant sign-up${d.merchantsPending > 1 ? 's' : ''} to review`);
+      if (d.pendingTopUps) todo.push(`<b>${d.pendingTopUps}</b> wallet top-up${d.pendingTopUps > 1 ? 's' : ''} (${peso0(d.pendingTopUpAmount)}) to check`);
+      if (d.ridersPending) todo.push(`<b>${d.ridersPending}</b> rider${d.ridersPending > 1 ? 's' : ''} waiting for approval`);
+      $('#view').innerHTML = `
+        ${todo.length ? `<div class="banner" style="margin-bottom:16px">Needs your attention: ${todo.join(' · ')}</div>` : ''}
+        <h3 style="margin-bottom:10px">Founding 100</h3>
+        <div class="card" style="margin-bottom:20px"><div class="row between"><b class="num" style="font-size:26px;color:var(--forest)">${d.foundingUsed} / ${d.foundingLimit}</b><span class="muted">${d.merchantsActive} active shops · package fees confirmed ${peso0(d.packageFeesConfirmed)}</span></div>
+          <div class="suki-meter" style="margin-top:10px"><div class="track" style="background:var(--leaf-soft)"><div class="fill" style="width:${Math.min(100, d.foundingUsed / d.foundingLimit * 100)}%"></div></div></div></div>
+        <h3 style="margin-bottom:10px">Orders</h3>
+        <div class="kpis" style="margin-bottom:20px">${stat(d.todayOrders, 'Orders today')}${stat(peso0(d.todayGMV), 'Item sales today')}${stat(d.activeOrders, 'Orders in progress')}
+          ${stat(d.completedOrders, 'Completed orders')}${stat(peso0(d.gmv), 'Total item sales (completed)')}${stat(peso0(d.platformEarned), 'Platform share earned')}</div>
+        <h3 style="margin-bottom:10px">Money held for others</h3>
+        <div class="kpis" style="margin-bottom:20px">${stat(peso0(d.walletLiability), 'Customer wallet balances')}${stat(peso0(d.payablesOpen), 'To pay merchants & riders')}${stat(peso0(d.receivablesOpen), 'To collect from merchants & riders')}</div>
+        <h3 style="margin-bottom:10px">Community pool</h3>
+        <div class="kpis" style="margin-bottom:20px">${stat(peso0(d.poolContributed), 'Pool share collected')}${stat(peso0(d.pointsReserve), 'Points reserve')}${stat(d.pointsOutstanding, 'Points held by customers')}${stat(peso0(d.marketingFund), 'Marketing fund')}</div>
+        ${Math.abs(d.pointsReserve - d.pointsOutstanding) > 0.5 ? `<div class="banner coral" style="margin-bottom:20px">The points reserve (${peso0(d.pointsReserve)}) does not match the points customers hold (${d.pointsOutstanding}). Check the pool ledger.</div>` : ''}
+        <h3 style="margin-bottom:10px">People</h3>
+        <div class="kpis">${stat(d.customers, 'Customers')}${stat(d.ridersActive, 'Active riders')}${stat(d.ridersOnline, 'Riders online now')}</div>`;
+    },
+
+    // ───────────── Merchants ─────────────
+    async merchants() {
+      const list = await api('adminMerchants');
+      const filter = st.mFilter || 'Pending';
+      $('#actions').innerHTML = `<div class="seg">${['Pending', 'Active', 'All'].map(f => `<button data-f="${f}" class="${filter === f ? 'on' : ''}">${f}</button>`).join('')}</div>`;
+      $$('[data-f]').forEach(b => b.onclick = () => { st.mFilter = b.dataset.f; show('merchants'); });
+      const rows = list.filter(m => filter === 'All' || m.Status === filter);
+      $('#view').innerHTML = table([
+        { h: '#', f: m => m.FoundingNo || '—' },
+        { h: 'Shop', f: m => `<b>${esc(m.BusinessName)}</b><div class="small muted">${esc(m.OwnerName)} · ${esc(m.Category)}</div>` },
+        { h: 'Contact', f: m => `${esc(m.Mobile)}<div class="small muted">${esc(m.Email)}</div>` },
+        { h: 'Package', f: m => `${esc(m.Package)}<div class="small muted">${m.PackageFee ? peso0(m.PackageFee) : 'fee not set'}</div>` },
+        { h: 'Payment', f: m => `${esc(m.PaymentMethod)}${m.PaymentRef ? `<div class="small muted">Ref ${esc(m.PaymentRef)}</div>` : ''}<div><span class="pill ${m.PaymentStatus === 'Confirmed' ? '' : 'mango'}">${esc(m.PaymentStatus)}</span></div>` },
+        { h: 'Status', f: m => `<span class="pill ${m.Status === 'Active' ? '' : m.Status === 'Pending' ? 'mango' : 'coral'}">${esc(m.Status)}</span>${m.Status === 'Active' ? `<div class="small muted">${m.IsOpen ? 'Open' : 'Closed'}</div>` : ''}` },
+        { h: 'Referrals', r: 1, f: m => m.referrals },
+        { h: '', f: m => `<div class="row wrap">${m.PaymentStatus !== 'Confirmed' ? btn('Confirm payment', { a: 'confirmPayment', id: m.MerchantID }, 'mango') : ''}
+          ${m.Status === 'Pending' && m.PaymentStatus === 'Confirmed' ? btn('Approve', { a: 'approve', id: m.MerchantID }, 'leaf') : ''}
+          ${m.Status === 'Pending' ? btn('Reject', { a: 'reject', id: m.MerchantID }, 'danger') : ''}
+          ${m.Status === 'Active' ? btn('Suspend', { a: 'suspend', id: m.MerchantID }, 'ghost') : ''}
+          ${m.Status === 'Suspended' ? btn('Reactivate', { a: 'reactivate', id: m.MerchantID }, 'ghost') : ''}
+          ${m.Status === 'Active' ? btn(m.Package === 'Starter' ? 'To Premium' : 'To Starter', { a: 'changePackage', id: m.MerchantID, pkg: m.Package === 'Starter' ? 'Premium' : 'Starter' }, 'ghost') : ''}
+          ${btn('Reset password', { a: 'resetPassword', id: m.MerchantID }, 'ghost')}</div>` },
+      ], rows, filter === 'Pending' ? 'No sign-ups waiting.' : 'No merchants yet.');
+      $('#view').onclick = async e => {
+        const b = e.target.closest('[data-a]'); if (!b) return;
+        const m = list.find(x => x.MerchantID === b.dataset.id);
+        const d = { merchantId: m.MerchantID, action: b.dataset.a };
+        if (d.action === 'confirmPayment') {
+          const sh = sheet('Confirm package payment', `<form class="stack" id="cp"><p class="muted">${esc(m.BusinessName)} · ${esc(m.Package)} · ${esc(m.PaymentMethod)}</p>
+            <label class="field"><span>Amount received (₱)</span><input class="input" name="packageFee" type="number" step="0.01" value="${m.PackageFee || ''}" required></label>
+            <label class="field"><span>OR number or transfer reference</span><input class="input" name="paymentRef" value="${esc(m.PaymentRef)}" required></label>
+            <button class="btn block mango">Confirm payment</button></form>`);
+          const f = sh.el.querySelector('#cp');
+          f.onsubmit = ev => { ev.preventDefault(); busy(f.querySelector('button'), async () => { await api('adminUpdateMerchant', Object.assign(d, S.form(f))); sh.close(); toast('Payment confirmed.'); reload(); }); };
+          return;
+        }
+        if (d.action === 'resetPassword') { d.newPassword = await S.prompt('Reset password', 'New password for ' + m.BusinessName, { type: 'text', ok: 'Reset password' }); if (!d.newPassword) return; }
+        if (d.action === 'changePackage') d.package = b.dataset.pkg;
+        if (['reject', 'suspend'].indexOf(d.action) >= 0 && !await S.confirm(d.action === 'reject' ? 'Reject sign-up?' : 'Suspend shop?', m.BusinessName + (d.action === 'suspend' ? ' will be hidden from customers and closed.' : ' will not be able to go live.'), d.action === 'reject' ? 'Reject' : 'Suspend', true)) return;
+        busy(b, async () => { const r = await api('adminUpdateMerchant', d); toast(d.action === 'approve' ? `Approved as founding merchant #${r.FoundingNo}.` : 'Saved.'); reload(); });
+      };
+    },
+
+    // ───────────── Top-ups ─────────────
+    async topups() {
+      const f = st.tFilter || 'Pending';
+      const list = await api('adminTopUps', { status: f });
+      $('#actions').innerHTML = `<div class="seg">${['Pending', 'Approved', 'Rejected', 'All'].map(x => `<button data-f="${x}" class="${f === x ? 'on' : ''}">${x}</button>`).join('')}</div>`;
+      $$('[data-f]').forEach(b => b.onclick = () => { st.tFilter = b.dataset.f; show('topups'); });
+      $('#view').innerHTML = `<p class="muted small" style="margin-bottom:12px">Check each reference number against your GCash, Maya or bank records before approving. Approved money goes straight to the customer's wallet.</p>` + table([
+        { h: 'Requested', f: t => when(t.RequestedAt) },
+        { h: 'Customer', f: t => esc(t.CustomerName) },
+        { h: 'Method', f: t => esc(t.Method) },
+        { h: 'Reference', f: t => `<b>${esc(t.Reference || '—')}</b>` },
+        { h: 'Amount', r: 1, f: t => `<b>${peso(t.Amount)}</b>` },
+        { h: 'Status', f: t => `<span class="pill ${t.Status === 'Approved' ? '' : t.Status === 'Rejected' ? 'coral' : 'mango'}">${esc(t.Status)}</span>${t.Note ? `<div class="small muted">${esc(t.Note)}</div>` : ''}${t.ProcessedBy ? `<div class="small muted">by ${esc(t.ProcessedBy)}</div>` : ''}` },
+        { h: '', f: t => t.Status === 'Pending' ? `<div class="row">${btn('Approve', { a: 'approve', id: t.TopUpID }, 'leaf')}${btn('Reject', { a: 'reject', id: t.TopUpID }, 'danger')}</div>` : '' },
+      ], list, 'No top-ups here.');
+      $('#view').onclick = async e => {
+        const b = e.target.closest('[data-a]'); if (!b) return;
+        const t = list.find(x => x.TopUpID === b.dataset.id);
+        let note = '';
+        if (b.dataset.a === 'reject') { note = await S.prompt('Reject top-up', 'Reason (the customer sees this)', { placeholder: 'e.g. Reference not found in GCash', ok: 'Reject', danger: true }); if (!note) return; }
+        else if (!await S.confirm('Approve ' + peso(t.Amount) + '?', `Add ${peso(t.Amount)} to ${t.CustomerName}'s wallet. Reference: ${t.Reference || 'cash'}.`, 'Approve')) return;
+        busy(b, async () => { await api('adminProcessTopUp', { topUpId: t.TopUpID, action: b.dataset.a, note }); toast(b.dataset.a === 'approve' ? 'Top-up approved.' : 'Top-up rejected.'); reload(); });
+      };
+    },
+
+    // ───────────── Orders ─────────────
+    async orders() {
+      const f = st.oFilter || 'Active';
+      const list = await api('adminOrders', { status: f });
+      $('#actions').innerHTML = `<div class="seg">${['Active', 'Completed', 'Cancelled', 'All'].map(x => `<button data-f="${x}" class="${f === x ? 'on' : ''}">${x}</button>`).join('')}</div>`;
+      $$('[data-f]').forEach(b => b.onclick = () => { st.oFilter = b.dataset.f; show('orders'); });
+      $('#view').innerHTML = table([
+        { h: 'Placed', f: o => `${when(o.CreatedAt)}<div class="small muted">${esc(o.OrderID)}</div>` },
+        { h: 'Customer → Shop', f: o => `<b>${esc(o.CustomerName)}</b><div class="small muted">${esc(o.MerchantName)}</div>` },
+        { h: 'Items', f: o => `<span class="small">${S.itemsText(o)}</span>` },
+        { h: 'Type', f: o => `${esc(o.OrderType)}<div class="small muted">${esc(o.RiderName || '')}</div>` },
+        { h: 'Pay', f: o => `${esc(o.PaymentMethod)}${o.PointsUsed ? `<div class="small muted">${o.PointsUsed} pts</div>` : ''}` },
+        { h: 'Total', r: 1, f: o => `<b>${peso(o.AmountDue)}</b>` },
+        { h: 'Status', f: o => S.statusPill(o.Status) + (o.CancelReason ? `<div class="small muted">${esc(o.CancelReason)}</div>` : '') },
+        { h: '', f: o => `<div class="row">${btn('Chat', { chat: o.OrderID }, 'ghost')}${o.Status !== 'Completed' && o.Status !== 'Cancelled' ? btn('Cancel', { cancel: o.OrderID }, 'danger') : ''}</div>` },
+      ], list, 'No orders here.');
+      $('#view').onclick = async e => {
+        const c = e.target.closest('[data-chat]'); if (c) return S.openChat(c.dataset.chat, 'Order chat');
+        const x = e.target.closest('[data-cancel]'); if (!x) return;
+        const reason = await S.prompt('Cancel order', 'Reason', { message: 'Wallet payment and points are refunded automatically.', ok: 'Cancel order', danger: true });
+        if (!reason) return;
+        busy(x, async () => { await api('adminCancelOrder', { orderId: x.dataset.cancel, reason }); toast('Order cancelled and refunded.'); reload(); });
+      };
+    },
+
+    // ───────────── Settlements ─────────────
+    async settlements() {
+      const list = await api('adminSettlements');
+      $('#view').innerHTML = `<p class="muted small" style="margin-bottom:12px">Open balances per shop and rider. Positive: 100 - SHOPS pays them (wallet orders and points). Negative: they remit to 100 - SHOPS (service charges collected in cash). Mark as settled after the money moves.</p>` + table([
+        { h: 'Party', f: g => `<b>${esc(g.partyName)}</b><div class="small muted">${esc(g.partyType)} · ${esc(g.mobile)}</div>` },
+        { h: 'Orders', r: 1, f: g => g.orders },
+        { h: 'Balance', r: 1, f: g => `<b style="color:${g.net >= 0 ? 'var(--leaf)' : 'var(--coral)'}">${g.net >= 0 ? 'Pay ' : 'Collect '}${peso(Math.abs(g.net))}</b>` },
+        { h: '', f: g => btn('Mark settled', { t: g.partyType, id: g.partyId, n: g.partyName, amt: g.net }, 'mango') },
+      ], list, 'Everything is settled.');
+      $('#view').onclick = async e => {
+        const b = e.target.closest('[data-t]'); if (!b) return;
+        const net = Number(b.dataset.amt);
+        const ref = await S.prompt('Settle ' + b.dataset.n, 'Payment reference (or "cash")', { message: (net >= 0 ? 'You paid them ' : 'They paid you ') + peso(Math.abs(net)) + '.', ok: 'Mark settled' });
+        if (!ref) return;
+        busy(b, async () => { await api('adminSettleParty', { partyType: b.dataset.t, partyId: b.dataset.id, reference: ref }); toast('Settled.'); reload(); });
+      };
+    },
+
+    // ───────────── Pool ─────────────
+    async pool() {
+      const p = await api('adminPool');
+      const s = await api('publicInfo');
+      $('#actions').innerHTML = `<button class="btn sm ghost" id="exp">Run points expiry</button><button class="btn sm mango" id="spend">Record marketing spend</button>`;
+      $('#view').innerHTML = `<div class="kpis" style="margin-bottom:14px">${stat(peso(p.pointsReserve), 'Points reserve (backs customer points)')}${stat(peso(p.marketingFund), 'Marketing fund (double-points promos, ads)')}</div>
+        <div class="banner green" style="margin-bottom:18px">Every completed order sends ${peso0(s.poolShare)} to the pool. The value of points earned goes to the points reserve; the rest goes to the marketing fund. When customers use points, the reserve pays the shop back. Expired points return to the marketing fund.</div>
+        ${table([
+          { h: 'Date', f: x => when(x.CreatedAt) },
+          { h: 'Fund', f: x => x.Fund === 'PointsReserve' ? 'Points reserve' : 'Marketing fund' },
+          { h: 'Type', f: x => esc({ WelcomePoints: 'Welcome points', Contribution: 'Order contribution', Redeemed: 'Points used', Expired: 'Points expired', Spend: 'Marketing spend' }[x.Type] || x.Type) },
+          { h: 'Details', f: x => `<span class="small">${esc(x.Description)}</span>${x.RefID ? `<div class="small muted">${esc(x.RefID)}</div>` : ''}` },
+          { h: 'Amount', r: 1, f: x => `<b style="color:${x.Amount >= 0 ? 'var(--leaf)' : 'var(--coral)'}">${x.Amount >= 0 ? '+' : '−'}${peso(Math.abs(x.Amount))}</b>` },
+        ], p.ledger, 'No pool activity yet.')}`;
+      $('#exp').onclick = e => busy(e.currentTarget, async () => { const r = await api('adminRunExpiry'); toast(r.expiredPoints + ' points expired.'); reload(); });
+      $('#spend').onclick = () => {
+        const sh = sheet('Record marketing spend', `<form class="stack" id="ms"><label class="field"><span>Amount (₱)</span><input class="input" name="amount" type="number" step="0.01" min="1" required></label>
+          <label class="field"><span>What was it for?</span><input class="input" name="description" required placeholder="e.g. Facebook ads for Undas promo"></label><button class="btn block mango">Record spend</button></form>`);
+        const f = sh.el.querySelector('#ms');
+        f.onsubmit = ev => { ev.preventDefault(); busy(f.querySelector('button'), async () => { await api('adminMarketingSpend', S.form(f)); sh.close(); toast('Spend recorded.'); reload(); }); };
+      };
+    },
+
+    // ───────────── Riders ─────────────
+    async riders() {
+      const list = await api('adminRiders');
+      $('#view').innerHTML = table([
+        { h: 'Rider', f: r => `<b>${esc(r.Name)}</b><div class="small muted">${esc(r.Mobile)}</div>` },
+        { h: 'Vehicle', f: r => `${esc(r.Vehicle)} <span class="muted">${esc(r.PlateNo)}</span>` },
+        { h: 'Deliveries', r: 1, f: r => r.Deliveries || 0 },
+        { h: 'Status', f: r => `<span class="pill ${r.Status === 'Active' ? '' : r.Status === 'Pending' ? 'mango' : 'coral'}">${esc(r.Status)}</span> ${r.Status === 'Active' ? `<span class="small muted">${esc(r.Availability)}</span>` : ''}` },
+        { h: 'Joined', f: r => S.dateOnly(r.CreatedAt) },
+        { h: '', f: r => `<div class="row wrap">${r.Status === 'Pending' ? btn('Approve', { a: 'approve', id: r.RiderID }, 'leaf') + btn('Reject', { a: 'reject', id: r.RiderID }, 'danger') : ''}
+          ${r.Status === 'Active' ? btn('Suspend', { a: 'suspend', id: r.RiderID }, 'ghost') : ''}${r.Status === 'Suspended' || r.Status === 'Rejected' ? btn('Activate', { a: 'reactivate', id: r.RiderID }, 'ghost') : ''}
+          ${btn('Reset password', { a: 'resetPassword', id: r.RiderID }, 'ghost')}</div>` },
+      ], list, 'No riders yet. Share the rider app link to recruit.');
+      $('#view').onclick = async e => {
+        const b = e.target.closest('[data-a]'); if (!b) return;
+        const d = { riderId: b.dataset.id, action: b.dataset.a };
+        if (d.action === 'resetPassword') { d.newPassword = await S.prompt('Reset password', 'New password', { ok: 'Reset password' }); if (!d.newPassword) return; }
+        busy(b, async () => { await api('adminUpdateRider', d); toast('Saved.'); reload(); });
+      };
+    },
+
+    // ───────────── Customers ─────────────
+    async customers() {
+      const q = st.cq || '';
+      const list = await api('adminCustomers', { q });
+      $('#actions').innerHTML = `<form class="row" id="cs"><input class="input" name="q" value="${esc(q)}" placeholder="Search name or mobile" style="width:220px"><button class="btn sm">Search</button></form>`;
+      $('#cs').onsubmit = e => { e.preventDefault(); st.cq = e.target.q.value.trim(); show('customers'); };
+      $('#view').innerHTML = table([
+        { h: 'Customer', f: c => `<b>${esc(c.Name)}</b><div class="small muted">${esc(c.Mobile)}</div>` },
+        { h: 'Address', f: c => `<span class="small">${esc(c.Address)}</span>` },
+        { h: 'Wallet', r: 1, f: c => peso(c.Wallet) },
+        { h: 'Points', r: 1, f: c => c.Points },
+        { h: 'Joined', f: c => S.dateOnly(c.CreatedAt) + (c.ReferredBy ? '<div class="small muted">referred</div>' : '') },
+        { h: 'Status', f: c => `<span class="pill ${c.Status === 'Active' ? '' : 'coral'}">${esc(c.Status)}</span>` },
+        { h: '', f: c => btn('Adjust', { adj: c.CustomerID }, 'ghost') },
+      ], list, 'No customers found.');
+      $('#view').onclick = e => {
+        const b = e.target.closest('[data-adj]'); if (!b) return;
+        const c = list.find(x => x.CustomerID === b.dataset.adj);
+        const sh = sheet(c.Name, `<form class="stack" id="aw"><p class="muted">Wallet ${peso(c.Wallet)} · ${c.Points} points</p>
+          <label class="field"><span>Wallet adjustment (₱)</span><input class="input" name="amount" type="number" step="0.01" placeholder="e.g. 100 or -50"><div class="hint">Use a minus sign to deduct. Every adjustment is logged.</div></label>
+          <label class="field"><span>Reason</span><input class="input" name="reason" placeholder="e.g. Refund for damaged item"></label>
+          <label class="field"><span>Account status</span><select class="input" name="status"><option ${c.Status === 'Active' ? 'selected' : ''}>Active</option><option ${c.Status === 'Suspended' ? 'selected' : ''}>Suspended</option></select></label>
+          <button class="btn block mango">Save</button></form>`);
+        const f = sh.el.querySelector('#aw');
+        f.onsubmit = ev => { ev.preventDefault(); busy(f.querySelector('button'), async () => {
+          const d = S.form(f); d.customerId = c.CustomerID;
+          await api('adminAdjustWallet', d);
+          sh.close(); toast('Saved.'); reload();
+        }); };
+      };
+    },
+
+    // ───────────── Announcements ─────────────
+    async announcements() {
+      const list = await api('adminAnnouncements');
+      $('#actions').innerHTML = `<button class="btn sm mango" id="new">${icon('plus')} New announcement</button>`;
+      $('#new').onclick = () => {
+        const sh = sheet('New announcement', `<form class="stack" id="an"><label class="field"><span>Title</span><input class="input" name="title" required placeholder="e.g. Undas promo: double points!"></label>
+          <label class="field"><span>Message</span><textarea class="input" name="message"></textarea></label><button class="btn block mango">Publish to customers</button></form>`);
+        const f = sh.el.querySelector('#an');
+        f.onsubmit = ev => { ev.preventDefault(); busy(f.querySelector('button'), async () => { await api('adminSaveAnnouncement', S.form(f)); sh.close(); toast('Published.'); reload(); }); };
+      };
+      $('#view').innerHTML = table([
+        { h: 'Posted', f: a => when(a.CreatedAt) },
+        { h: 'Announcement', f: a => `<b>${esc(a.Title)}</b><div class="small muted">${esc(a.Message)}</div>` },
+        { h: 'Status', f: a => a.Active ? '<span class="pill">Showing</span>' : '<span class="pill grey">Hidden</span>' },
+        { h: '', f: a => btn(a.Active ? 'Hide' : 'Show', { id: a.AnnouncementID, on: a.Active ? '' : '1' }, 'ghost') },
+      ], list, 'No announcements yet. Customers see them on the Shops screen.');
+      $('#view').onclick = e => { const b = e.target.closest('[data-id]'); if (b) busy(b, async () => { await api('adminSaveAnnouncement', { announcementId: b.dataset.id, active: !!b.dataset.on }); reload(); }); };
+    },
+
+    // ───────────── Settings ─────────────
+    async settings() {
+      const list = await api('adminSettings');
+      $('#view').innerHTML = `<form id="sf" class="card stack" style="max-width:760px">
+        <div class="banner small">Rules: platform share + pool share must equal the service fee, and points cap × point value cannot be more than the pool share. This keeps points fully paid for by the pool.</div>
+        ${list.map(s => `<label class="field"><span>${esc(s.key)}</span>
+          ${s.numeric ? `<input class="input" name="${esc(s.key)}" type="number" step="any" min="0" value="${esc(s.value)}">` : `<textarea class="input" name="${esc(s.key)}" style="min-height:${s.key === 'PAYMENT_INSTRUCTIONS' ? 78 : 46}px">${esc(s.value)}</textarea>`}
+          <div class="hint">${esc(s.description)}</div></label>`).join('')}
+        <button class="btn mango">Save settings</button></form>`;
+      const f = $('#sf');
+      f.onsubmit = e => { e.preventDefault(); busy(f.querySelector('button.mango'), async () => { await api('adminSaveSettings', { values: S.form(f) }); toast('Settings saved.'); }); };
+    },
+  };
+
+  boot();
+})();
+</script>
+</body>
+</html>

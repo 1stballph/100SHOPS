@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>100 - SHOPS Rider</title>
+<meta name="theme-color" content="#1E1466">
+<link rel="manifest" href="manifest-rider.json">
+<link rel="icon" href="icons/icon-rider-192.png">
+<link rel="apple-touch-icon" href="icons/icon-rider-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="100 SHOPS Rider">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-role="rider">
+<div id="app"><div class="empty" style="padding-top:40vh">Loading…</div></div>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+(function () {
+  const { api, esc, peso, peso0, when, $, $$, toast, busy, sheet, icon } = S;
+  const app = $('#app');
+  const st = { tab: 'jobs', me: null, jobs: [], active: [], seenJobs: null };
+  let pollTimer = null;
+
+  async function boot() {
+    if (!S.token()) return renderAuth('login');
+    try { st.me = await api('riderMe'); } catch (e) { return renderAuth('login'); }
+    renderShell();
+  }
+
+  function renderAuth(mode) {
+    app.innerHTML = `<div class="auth">
+      <img class="auth-logo" src="img/logo-256.png" alt="100 - SHOPS logo">
+      <p class="auth-sub">Rider app. Deliver orders from local shops and earn the delivery fee on every trip.</p>
+      <div class="seg" style="margin-bottom:20px"><button data-mode="login" class="${mode === 'login' ? 'on' : ''}">Log in</button><button data-mode="signup" class="${mode === 'signup' ? 'on' : ''}">Become a rider</button></div>
+      ${mode === 'login' ? `<form class="stack" id="f">
+        <label class="field"><span>Mobile number</span><input class="input" name="mobile" inputmode="tel" autocomplete="tel" required placeholder="09171234567"></label>
+        <label class="field"><span>Password</span><input class="input" type="password" name="password" autocomplete="current-password" required></label>
+        <button class="btn block">Log in</button></form>` : `<form class="stack" id="f">
+        <label class="field"><span>Full name</span><input class="input" name="name" autocomplete="name" required></label>
+        <label class="field"><span>Mobile number</span><input class="input" name="mobile" inputmode="tel" required placeholder="09171234567"></label>
+        <label class="field"><span>Vehicle</span><select class="input" name="vehicle"><option>Motorcycle</option><option>Bicycle</option><option>E-bike</option><option>Tricycle</option><option>Car</option></select></label>
+        <label class="field"><span>Plate number (if any)</span><input class="input" name="plateNo"></label>
+        <label class="field"><span>Password</span><input class="input" type="password" name="password" minlength="6" required autocomplete="new-password"></label>
+        <button class="btn block">Send sign-up</button>
+        <p class="small muted center">An admin reviews every rider before the first trip.</p></form>`}</div>`;
+    $$('[data-mode]').forEach(b => b.onclick = () => renderAuth(b.dataset.mode));
+    const f = $('#f');
+    f.onsubmit = e => {
+      e.preventDefault();
+      busy(f.querySelector('button.btn.block'), async () => {
+        if (mode === 'signup') {
+          const r = await api('riderSignup', S.form(f));
+          app.innerHTML = `<div class="auth"><div class="auth-mark">Salamat!</div><p class="auth-sub">${esc(r.message)}</p><button class="btn" id="back">Back to log in</button></div>`;
+          $('#back').onclick = () => renderAuth('login');
+          return;
+        }
+        const r = await api('riderLogin', S.form(f));
+        S.setToken(r.token);
+        st.me = await api('riderMe');
+        renderShell();
+      });
+    };
+  }
+
+  const TABS = [{ id: 'jobs', label: 'Jobs', icon: 'route' }, { id: 'active', label: 'My deliveries', icon: 'bike' },
+    { id: 'earnings', label: 'Earnings', icon: 'coins' }, { id: 'account', label: 'Account', icon: 'user' }];
+  function renderShell() {
+    app.innerHTML = `<div class="shell"><header class="topbar" id="top"></header><main class="page" id="page"></main></div>`;
+    go(st.tab);
+  }
+  function drawTabs() { S.tabbar(TABS.map(t => t.id === 'active' && st.active.length ? Object.assign({}, t, { badge: st.active.length }) : t), st.tab, go); }
+  function topbar() {
+    const on = st.me.Availability === 'Online';
+    $('#top').innerHTML = `<img class="logo-sm" src="img/logo-96.png" alt=""><div class="grow"><div class="brand">Hi, ${esc(st.me.Name.split(' ')[0])}</div><div class="small muted">${st.me.todayDeliveries} deliveries · ${peso0(st.me.todayEarnings)} today</div></div>
+      <button class="btn sm ${on ? 'leaf' : 'ghost'}" id="onBtn" aria-pressed="${on}">${on ? 'Online' : 'Offline'}</button>`;
+    $('#onBtn').onclick = e => busy(e.currentTarget, async () => {
+      const r = await api('setAvailability', { availability: on ? 'Offline' : 'Online' });
+      st.me.Availability = r.Availability; topbar();
+      toast(r.Availability === 'Online' ? 'You are online. New jobs will show up.' : 'You are offline.');
+      if (st.tab === 'jobs') loadJobs();
+    });
+  }
+  function go(tab) {
+    st.tab = tab; clearInterval(pollTimer); window.scrollTo(0, 0);
+    topbar(); drawTabs();
+    ({ jobs: renderJobs, active: renderActive, earnings: renderEarnings, account: renderAccount })[tab]();
+  }
+
+  // ───────────── Jobs ─────────────
+  function renderJobs() {
+    $('#page').innerHTML = '<div id="jlist"><p class="muted center" style="padding:30px">Looking for jobs…</p></div>';
+    loadJobs();
+    pollTimer = setInterval(() => { if (!document.hidden) loadJobs(true); }, 15000);
+  }
+  async function loadJobs(quiet) {
+    try { [st.jobs, st.active] = await Promise.all([api('availableJobs'), api('myDeliveries', { scope: 'active' })]); } catch (e) { if (!quiet) S.error(e); return; }
+    const ids = st.jobs.map(j => j.OrderID);
+    if (st.seenJobs && ids.some(id => st.seenJobs.indexOf(id) < 0)) { S.beep(); S.vibrate([150, 80, 150]); }
+    st.seenJobs = ids;
+    drawTabs();
+    if (st.tab !== 'jobs') return;
+    const el = $('#jlist');
+    if (st.me.Availability !== 'Online') { el.innerHTML = `<div class="empty"><h3>You are offline</h3>Tap <b>Offline</b> at the top to go online and see delivery jobs.</div>`; return; }
+    el.innerHTML = st.jobs.length ? '<div class="stack">' + st.jobs.map(j => `<div class="card">
+      <div class="row between"><b>${esc(j.MerchantName)}</b><b class="num" style="color:var(--leaf);font-size:18px">+${peso0(j.DeliveryFee)}</b></div>
+      <p class="small" style="margin-top:6px"><span class="muted">Pick up:</span> ${esc(j.MerchantAddress || j.MerchantName)}</p>
+      <p class="small"><span class="muted">Drop off:</span> ${esc(j.Address)}</p>
+      <div class="row wrap small" style="margin-top:8px">${S.statusPill(j.Status === 'Ready' ? 'Ready' : 'Preparing')}
+        ${j.PaymentMethod === 'Cash' ? `<span class="pill coral">Cash: pay shop ${peso0(j.Subtotal)}, collect ${peso0(j.AmountDue)}</span>` : '<span class="pill">Paid by wallet</span>'}</div>
+      <button class="btn block mango" style="margin-top:12px" data-take="${esc(j.OrderID)}">Accept delivery</button></div>`).join('') + '</div>'
+      : `<div class="empty"><h3>No jobs right now</h3>New delivery jobs appear here with a sound. Keep the app open while you're online.</div>`;
+    el.onclick = e => { const b = e.target.closest('[data-take]'); if (b) busy(b, async () => {
+      await api('riderUpdateOrder', { orderId: b.dataset.take, action: 'accept' });
+      toast('Delivery accepted. Head to the shop.'); go('active');
+    }); };
+  }
+
+  // ───────────── My deliveries ─────────────
+  async function renderActive() {
+    $('#page').innerHTML = '<div id="alist"><p class="muted center" style="padding:30px">Loading…</p></div>';
+    await loadActive();
+    pollTimer = setInterval(() => { if (!document.hidden) loadActive(true); }, 15000);
+  }
+  async function loadActive(quiet) {
+    try { st.active = await api('myDeliveries', { scope: 'active' }); } catch (e) { if (!quiet) S.error(e); return; }
+    drawTabs();
+    if (st.tab !== 'active') return;
+    const el = $('#alist');
+    el.innerHTML = st.active.length ? '<div class="stack">' + st.active.map(o => {
+      const cash = o.PaymentMethod === 'Cash';
+      const step = o.Status === 'On the way' ? 'drop' : 'pickup';
+      return `<div class="card"><div class="row between"><b>${esc(o.MerchantName)}</b>${S.statusPill(o.Status)}</div>${S.steps(o)}
+        <div class="list" style="margin-top:10px">
+          <div class="list-item"><div class="grow"><div class="small muted">1 · Pick up</div><b>${esc(o.MerchantAddress || o.MerchantName)}</b>
+            ${cash ? `<div class="small" style="color:var(--coral);font-weight:600">Pay the shop ${peso(o.Subtotal)} cash</div>` : ''}</div>
+            ${o.MerchantMobile ? `<a class="btn icon" href="tel:${esc(o.MerchantMobile)}" aria-label="Call shop">${icon('phone')}</a>` : ''}</div>
+          <div class="list-item"><div class="grow"><div class="small muted">2 · Drop off to ${esc(o.CustomerName)}</div><b>${esc(o.Address)}</b>
+            <div class="small" style="font-weight:600;color:${cash ? 'var(--coral)' : 'var(--leaf)'}">${cash ? 'Collect ' + peso(o.AmountDue) + ' cash' : 'Already paid. Collect nothing.'}</div></div>
+            <a class="btn icon" href="tel:${esc(o.CustomerMobile)}" aria-label="Call customer">${icon('phone')}</a></div>
+        </div>
+        <p class="small muted" style="margin-top:8px">${S.itemsText(o)}${o.Notes ? ' · Note: ' + esc(o.Notes) : ''}</p>
+        <div class="row" style="margin-top:12px">
+          ${step === 'pickup' ? (o.Status === 'Ready' ? `<button class="btn mango grow" data-act="pickup" data-id="${esc(o.OrderID)}">I picked up the order</button>` : `<button class="btn grow" disabled>Waiting for shop to finish</button>`)
+            : `<button class="btn leaf grow" data-act="deliver" data-id="${esc(o.OrderID)}">Delivered${cash ? ' & collected' : ''}</button>`}
+          <button class="btn ghost" data-chat="${esc(o.OrderID)}" aria-label="Chat">${icon('chat')}</button></div>
+        ${step === 'pickup' ? `<button class="btn sm ghost block" style="margin-top:8px" data-act="release" data-id="${esc(o.OrderID)}">Give this job back</button>` : ''}</div>`;
+    }).join('') + '</div>' : `<div class="empty"><h3>No deliveries in progress</h3>Accepted jobs show up here.<br><br><button class="btn" id="toJobs">See available jobs</button></div>`;
+    const tj = $('#toJobs'); if (tj) tj.onclick = () => go('jobs');
+    el.onclick = e => {
+      const c = e.target.closest('[data-chat]'); if (c) return S.openChat(c.dataset.chat, 'Order chat');
+      const a = e.target.closest('[data-act]'); if (!a) return;
+      const o = st.active.find(x => x.OrderID === a.dataset.id);
+      (async () => {
+        if (a.dataset.act === 'deliver' && o.PaymentMethod === 'Cash' && !await S.confirm('Collected the cash?', `Confirm you received ${peso(o.AmountDue)} from ${o.CustomerName}.`, 'Yes, delivered')) return;
+        if (a.dataset.act === 'release' && !await S.confirm('Give this job back?', 'Another rider will be able to take it.', 'Give back', true)) return;
+        busy(a, async () => {
+          await api('riderUpdateOrder', { orderId: o.OrderID, action: a.dataset.act });
+          if (a.dataset.act === 'deliver') { st.me = await api('riderMe'); topbar(); toast('Delivered! +' + peso0(o.DeliveryFee) + ' earned.'); }
+          else toast(a.dataset.act === 'pickup' ? 'On the way to the customer.' : 'Job given back.');
+          loadActive();
+        });
+      })();
+    };
+  }
+
+  // ───────────── Earnings ─────────────
+  async function renderEarnings() {
+    $('#page').innerHTML = '<p class="muted center" style="padding:30px">Loading…</p>';
+    let s, hist;
+    try { [st.me, s, hist] = await Promise.all([api('riderMe'), api('mySettlements'), api('myDeliveries', { scope: 'history' })]); } catch (e) { return S.error(e); }
+    if (st.tab !== 'earnings') return;
+    topbar();
+    $('#page').innerHTML = `<div class="stat-grid">
+        <div class="stat"><b>${peso0(st.me.todayEarnings)}</b><span>Earned today</span></div>
+        <div class="stat"><b>${st.me.todayDeliveries}</b><span>Deliveries today</span></div>
+        <div class="stat"><b>${peso0(st.me.totalEarnings)}</b><span>Total earned</span></div>
+        <div class="stat"><b>${st.me.Deliveries}</b><span>Total deliveries</span></div></div>
+      <div class="section-title"><h3>Balance with 100 - SHOPS</h3></div>
+      <div class="card">${s.openNet > 0 ? `<b class="num" style="font-size:22px;color:var(--leaf)">${peso(s.openNet)}</b><p class="small muted">We owe you this for wallet-paid deliveries.</p>`
+        : s.openNet < 0 ? `<b class="num" style="font-size:22px;color:var(--coral)">${peso(-s.openNet)}</b><p class="small muted">From cash orders you keep your delivery fee. This is the service charge you collected, to remit to 100 - SHOPS.</p>`
+        : '<b>All settled</b><p class="small muted">Nothing to pay or collect right now.</p>'}</div>
+      <div class="section-title"><h3>Recent deliveries</h3></div>
+      ${hist.length ? '<div class="list">' + hist.map(o => `<div class="list-item"><div class="grow"><b>${esc(o.MerchantName)}</b><div class="small muted">${when(o.CompletedAt || o.UpdatedAt)} · ${esc(o.CustomerName)}</div></div>
+        ${o.Status === 'Completed' ? `<b class="num" style="color:var(--leaf)">+${peso0(o.DeliveryFee)}</b>` : S.statusPill(o.Status)}</div>`).join('') + '</div>' : '<div class="empty">No deliveries yet.</div>'}`;
+  }
+
+  function renderAccount() {
+    const r = st.me;
+    $('#page').innerHTML = `<div class="row" style="margin-bottom:18px"><div class="avatar">${S.initial(r.Name)}</div><div><h2>${esc(r.Name)}</h2><div class="small muted">${esc(r.Mobile)} · ${esc(r.Vehicle)} ${esc(r.PlateNo)}</div></div></div>
+      <div class="list">
+        ${S.isStandalone() ? '' : '<div class="list-item tap" id="inst"><div class="grow"><b>Install the app</b><div class="small muted">Get job alerts from your home screen</div></div></div>'}
+        <div class="list-item tap" id="pw"><div class="grow"><b>Change password</b></div></div>
+        <div class="list-item tap" id="out"><div class="grow"><b style="color:var(--coral)">Log out</b></div></div></div>
+      <div class="banner" style="margin-top:16px"><strong>Cash orders:</strong> pay the shop the item amount at pickup, then collect the full total from the customer. You keep the delivery fee and remit the service charge to 100 - SHOPS.</div>`;
+    const inst = $('#inst'); if (inst) inst.onclick = S.install;
+    $('#pw').onclick = S.changePassword;
+    $('#out').onclick = async () => {
+      if (!await S.confirm('Log out?', 'You will go offline and stop getting jobs.', 'Log out')) return;
+      try { await api('setAvailability', { availability: 'Offline' }); } catch (e) {}
+      S.logout();
+    };
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

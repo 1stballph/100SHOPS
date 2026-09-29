@@ -1,0 +1,33 @@
+{
+  "name": "100 - SHOPS Admin",
+  "short_name": "Admin",
+  "description": "Run the 100 - SHOPS platform.",
+  "id": "./admin.html",
+  "start_url": "./admin.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#2A1BD0",
+  "theme_color": "#1E1466",
+  "lang": "en-PH",
+  "icons": [
+    {
+      "src": "icons/icon-admin-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-admin-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-admin-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

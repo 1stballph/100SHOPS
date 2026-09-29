@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>100 - SHOPS Merchant</title>
+<meta name="theme-color" content="#1E1466">
+<link rel="manifest" href="manifest-merchant.json">
+<link rel="icon" href="icons/icon-merchant-192.png">
+<link rel="apple-touch-icon" href="icons/icon-merchant-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="100 SHOPS Shop">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-role="merchant">
+<div id="app"><div class="empty" style="padding-top:40vh">Loading…</div></div>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+<script>
+(function () {
+  const { api, esc, peso, peso0, when, $, $$, toast, busy, sheet, icon } = S;
+  const app = $('#app');
+  const st = { tab: 'orders', me: null, orders: [], products: [], seen: null };
+  let pollTimer = null;
+
+  async function boot() {
+    try { await S.loadInfo(); } catch (e) { app.innerHTML = `<div class="auth"><p>${esc(e.message)}</p><button class="btn" onclick="location.reload()">Try again</button></div>`; return; }
+    if (!S.token()) return renderAuth('login');
+    try { st.me = await api('merchantMe'); } catch (e) { return renderAuth('login'); }
+    renderShell();
+  }
+
+  // ───────────── Auth & sign-up ─────────────
+  function renderAuth(mode) {
+    const info = S.info;
+    const left = Math.max(0, info.foundingLimit - info.foundingUsed);
+    const fee = n => n ? peso0(n) : 'Ask our team for the rate';
+    app.innerHTML = `<div class="auth">
+      <img class="auth-logo" src="img/logo-256.png" alt="100 - SHOPS logo">
+      <p class="auth-sub">Merchant app. Sell to local customers, get orders on your phone, and grow together with fellow shops.</p>
+      <div class="seg" style="margin-bottom:20px"><button data-mode="login" class="${mode === 'login' ? 'on' : ''}">Log in</button><button data-mode="signup" class="${mode === 'signup' ? 'on' : ''}">Join as a shop</button></div>
+      ${mode === 'login' ? `<form class="stack" id="f">
+        <label class="field"><span>Email or mobile number</span><input class="input" name="login" autocomplete="username" required></label>
+        <label class="field"><span>Password</span><input class="input" type="password" name="password" autocomplete="current-password" required></label>
+        <button class="btn block">Log in</button></form>` : `
+      <div class="banner" style="margin-bottom:16px"><strong>${left} of ${info.foundingLimit} founding slots left.</strong> We launch on ${esc(S.dateOnly(info.launchDate))}, just in time for Halloween and Undas.</div>
+      <form class="stack" id="f">
+        <label class="field"><span>Business name</span><input class="input" name="businessName" required></label>
+        <label class="field"><span>Owner name</span><input class="input" name="ownerName" required autocomplete="name"></label>
+        <label class="field"><span>What do you sell?</span><select class="input" name="category">${info.categories.map(c => `<option>${esc(c)}</option>`).join('')}</select></label>
+        <label class="field"><span>Shop address</span><input class="input" name="address" placeholder="Street, barangay, city"></label>
+        <label class="field"><span>Mobile number</span><input class="input" name="mobile" inputmode="tel" placeholder="09171234567" required></label>
+        <label class="field"><span>Email</span><input class="input" name="email" type="email" required autocomplete="email"></label>
+        <label class="field"><span>Password</span><input class="input" type="password" name="password" minlength="6" required autocomplete="new-password"></label>
+        <h3 style="margin-top:18px">Choose your package</h3>
+        <div class="choice">
+          <label><input type="radio" name="package" value="Starter" checked><strong>Starter · ${fee(info.starterFee)}</strong><span class="small muted">Storefront, merchant dashboard, directory listing, campaigns and the community revenue-sharing pool.</span></label>
+          <label><input type="radio" name="package" value="Premium"><strong>Premium · ${fee(info.premiumFee)}</strong><span class="small muted">Everything in Starter, plus Facebook page management, promo content and videos, AI Messenger chatbot and a monthly business review.</span></label>
+        </div>
+        <h3 style="margin-top:18px">How will you pay?</h3>
+        <div class="choice two">
+          <label><input type="radio" name="paymentMethod" value="Cash" checked><strong>Cash</strong><span class="small muted">Pay at the registration table and get your receipt.</span></label>
+          <label><input type="radio" name="paymentMethod" value="Fund Transfer"><strong>Fund transfer</strong><span class="small muted">Bank or e-wallet.</span></label>
+        </div>
+        <div id="ftBox" class="hidden stack">
+          <div class="banner green small">${esc(info.paymentInstructions)}</div>
+          <label class="field"><span>Reference number</span><input class="input" name="paymentRef" placeholder="From your transfer receipt"></label>
+        </div>
+        <button class="btn block mango" style="margin-top:8px">Sign up my shop</button>
+        <p class="small muted center">Your shop goes live once the 100 - SHOPS team confirms your payment.</p>
+      </form>`}</div>`;
+    $$('[data-mode]').forEach(b => b.onclick = () => renderAuth(b.dataset.mode));
+    const f = $('#f');
+    if (mode === 'signup') $$('[name=paymentMethod]').forEach(r => r.onchange = () => $('#ftBox').classList.toggle('hidden', f.paymentMethod.value !== 'Fund Transfer'));
+    f.onsubmit = e => {
+      e.preventDefault();
+      busy(f.querySelector('button.btn.block'), async () => {
+        const r = await api(mode === 'login' ? 'merchantLogin' : 'merchantSignup', S.form(f));
+        S.setToken(r.token);
+        st.me = await api('merchantMe');
+        renderShell();
+      });
+    };
+  }
+
+  // ───────────── Shell ─────────────
+  function renderShell() {
+    app.innerHTML = `<div class="shell"><header class="topbar" id="top"></header><main class="page" id="page"></main></div>`;
+    if (st.me.Status !== 'Active') return renderPending();
+    go(st.tab);
+  }
+  const TABS = [{ id: 'orders', label: 'Orders', icon: 'orders' }, { id: 'products', label: 'Products', icon: 'box' },
+    { id: 'sales', label: 'Sales', icon: 'chart' }, { id: 'store', label: 'My shop', icon: 'store' }];
+  function drawTabs() {
+    const n = st.orders.filter(o => o.Status === 'Pending').length;
+    S.tabbar(TABS.map(t => t.id === 'orders' && n ? Object.assign({}, t, { badge: n }) : t), st.tab, go);
+  }
+  function topbar() {
+    $('#top').innerHTML = `<img class="logo-sm" src="img/logo-96.png" alt=""><div class="grow"><div class="brand">${esc(st.me.BusinessName)}</div><div class="small muted">Founding merchant #${st.me.FoundingNo || '—'} · ${esc(st.me.Package)}</div></div>
+      <button class="btn sm ${st.me.IsOpen ? 'leaf' : 'ghost'}" id="openBtn" aria-pressed="${st.me.IsOpen}">${st.me.IsOpen ? 'Open' : 'Closed'}</button>`;
+    $('#openBtn').onclick = e => busy(e.currentTarget, async () => {
+      const r = await api('toggleOpen', { open: !st.me.IsOpen });
+      st.me.IsOpen = r.IsOpen; topbar();
+      toast(r.IsOpen ? 'Your shop is open. Customers can order now.' : 'Your shop is closed. Customers can browse but not order.');
+    });
+  }
+  function go(tab) {
+    st.tab = tab; clearInterval(pollTimer); window.scrollTo(0, 0);
+    topbar(); drawTabs();
+    ({ orders: renderOrders, products: renderProducts, sales: renderSales, store: renderStore })[tab]();
+    // Keep checking for new orders on every tab
+    pollTimer = setInterval(() => { if (!document.hidden) loadOrders(true); }, 15000);
+  }
+
+  function renderPending() {
+    const m = st.me;
+    $('#top').innerHTML = `<div class="brand withlogo grow"><img class="logo-sm" src="img/logo-96.png" alt=""><span style="color:var(--forest)">100 - <span>SHOPS</span></span></div>`;
+    $('#page').innerHTML = `
+      <h1 style="margin-top:10px">Almost there, ${esc(m.OwnerName || m.BusinessName)}!</h1>
+      <p class="muted" style="margin-top:6px">We received the sign-up for <b>${esc(m.BusinessName)}</b>.</p>
+      <div class="list" style="margin-top:18px">
+        <div class="list-item"><div class="grow"><b>Sign-up received</b><div class="small muted">${when(m.CreatedAt)}</div></div><span class="pill">Done</span></div>
+        <div class="list-item"><div class="grow"><b>Package payment</b><div class="small muted">${esc(m.Package)} · ${esc(m.PaymentMethod)}${m.PaymentRef ? ' · Ref ' + esc(m.PaymentRef) : ''}</div></div>
+          <span class="pill ${m.PaymentStatus === 'Confirmed' ? '' : 'mango'}">${m.PaymentStatus === 'Confirmed' ? 'Confirmed' : 'Checking'}</span></div>
+        <div class="list-item"><div class="grow"><b>Shop approval</b><div class="small muted">You'll get your founding merchant number</div></div>
+          <span class="pill ${m.Status === 'Rejected' || m.Status === 'Suspended' ? 'coral' : 'mango'}">${esc(m.Status)}</span></div>
+      </div>
+      ${m.PaymentMethod === 'Cash' && m.PaymentStatus !== 'Confirmed' ? '<div class="banner" style="margin-top:14px">Paying cash? Hand it to the registration table and keep your official receipt.</div>' : ''}
+      <p class="muted small" style="margin-top:16px">Meanwhile, you can fill in your shop details so you're ready on launch day.</p>
+      <div class="row" style="margin-top:14px"><button class="btn grow" id="edit">Edit shop details</button><button class="btn ghost" id="refresh">Check status</button></div>
+      <button class="btn ghost block" style="margin-top:10px" id="out">Log out</button>`;
+    $('#edit').onclick = editStore;
+    $('#refresh').onclick = e => busy(e.currentTarget, async () => { st.me = await api('merchantMe'); renderShell(); if (st.me.Status === 'Active') toast('Your shop is approved. Welcome to 100 - SHOPS!'); });
+    $('#out').onclick = S.logout;
+  }
+
+  // ───────────── Orders ─────────────
+  async function loadOrders(quiet) {
+    let list;
+    try { list = await api('merchantOrders', { scope: 'active' }); } catch (e) { if (!quiet) S.error(e); return; }
+    const pending = list.filter(o => o.Status === 'Pending').map(o => o.OrderID);
+    if (st.seen && pending.some(id => st.seen.indexOf(id) < 0)) { S.beep(); S.vibrate([200, 100, 200]); toast('New order received!'); }
+    st.seen = pending;
+    st.orders = list;
+    drawTabs();
+    if (st.tab === 'orders') drawOrders();
+  }
+  function renderOrders() {
+    $('#page').innerHTML = `${st.me.IsOpen ? '' : '<div class="banner coral" style="margin-bottom:12px">Your shop is closed. Tap <b>Closed</b> at the top to start taking orders.</div>'}
+      <div class="seg" style="margin-bottom:14px"><button class="on" data-scope="active">Active</button><button data-scope="history">History</button></div><div id="olist"><p class="muted center" style="padding:30px">Loading orders…</p></div>`;
+    $$('[data-scope]').forEach(b => b.onclick = async () => {
+      $$('[data-scope]').forEach(x => x.classList.toggle('on', x === b));
+      if (b.dataset.scope === 'active') return loadOrders();
+      $('#olist').innerHTML = '<p class="muted center" style="padding:30px">Loading…</p>';
+      try { drawHistory(await api('merchantOrders', { scope: 'history' })); } catch (e) { S.error(e); }
+    });
+    loadOrders();
+  }
+  function drawOrders() {
+    if (!$('[data-scope=active].on')) return;
+    const el = $('#olist');
+    el.innerHTML = st.orders.length ? '<div class="stack">' + st.orders.map(o => `<div class="card">
+      <div class="row between"><div><b>${esc(o.CustomerName)}</b> <span class="small muted">${when(o.CreatedAt)}</span></div>${S.statusPill(o.Status)}</div>
+      <div class="small" style="margin-top:4px"><span class="pill ${o.OrderType === 'Pickup' ? 'dark' : 'mango'}">${o.OrderType}</span> ${o.PaymentMethod === 'Cash' ? '<span class="pill grey">Cash</span>' : '<span class="pill">Paid by wallet</span>'}
+      ${o.PointsUsed ? `<span class="pill">${o.PointsUsed} pts</span>` : ''}</div>
+      <div style="margin-top:10px">${(o.items || []).map(i => `<div class="row between"><span><b>${i.qty}×</b> ${esc(i.name)}</span><span class="num">${peso0(i.total)}</span></div>`).join('')}</div>
+      ${o.Notes ? `<div class="banner small" style="margin-top:8px">Note: ${esc(o.Notes)}</div>` : ''}
+      <div class="row between" style="margin-top:8px;border-top:1px solid var(--line);padding-top:8px"><span class="muted small">Your sales for this order</span><b class="num">${peso(o.Subtotal)}</b></div>
+      ${o.OrderType === 'Delivery' ? `<p class="small muted" style="margin-top:4px">${o.RiderName ? 'Rider: <b>' + esc(o.RiderName) + '</b>' : 'Waiting for a rider'}${o.PaymentMethod === 'Cash' ? ' · Rider pays you ' + peso(o.Subtotal) + ' cash at pickup' : ''}</p>`
+        : o.PaymentMethod === 'Cash' ? `<p class="small muted" style="margin-top:4px">Collect <b>${peso(o.AmountDue)}</b> from the customer at pickup.</p>` : ''}
+      <div class="row wrap" style="margin-top:12px">${actionsFor(o)}<button class="btn sm ghost" data-chat="${esc(o.OrderID)}">${icon('chat')} Chat</button>
+      <a class="btn sm ghost" href="tel:${esc(o.CustomerMobile)}">${icon('phone')} Call</a></div></div>`).join('') + '</div>'
+      : `<div class="empty"><h3>No active orders</h3>${st.me.IsOpen ? 'New orders appear here with a sound. Keep this app open during business hours.' : 'Open your shop to receive orders.'}</div>`;
+    el.onclick = e => {
+      const c = e.target.closest('[data-chat]'); if (c) return S.openChat(c.dataset.chat, 'Order chat');
+      const a = e.target.closest('[data-act]'); if (a) doAction(a.dataset.act, a.dataset.id, a);
+    };
+  }
+  function actionsFor(o) {
+    const b = (act, label, cls) => `<button class="btn sm ${cls || ''}" data-act="${act}" data-id="${esc(o.OrderID)}">${label}</button>`;
+    if (o.Status === 'Pending') return b('accept', 'Accept order', 'leaf') + b('reject', 'Decline', 'danger');
+    if (o.Status === 'Preparing') return b('ready', 'Mark as ready', 'mango') + b('reject', 'Cancel', 'danger');
+    if (o.Status === 'Ready' && o.OrderType === 'Pickup') return b('complete', o.PaymentMethod === 'Cash' ? 'Paid & picked up' : 'Picked up', 'leaf');
+    return '';
+  }
+  async function doAction(action, id, btn) {
+    let reason = '';
+    if (action === 'reject') {
+      reason = await S.prompt('Decline this order?', 'Reason (the customer will see this)', { placeholder: 'e.g. Sold out today', ok: 'Decline order', danger: true, message: 'Their wallet payment and points will be refunded.' });
+      if (reason === null) return;
+    }
+    busy(btn, async () => {
+      await api('merchantUpdateOrder', { orderId: id, action, reason });
+      toast({ accept: 'Order accepted.', reject: 'Order declined and refunded.', ready: 'Marked as ready.', complete: 'Order completed. Nice sale!' }[action]);
+      loadOrders();
+    });
+  }
+  function drawHistory(list) {
+    $('#olist').innerHTML = list.length ? '<div class="list">' + list.map(o => `<div class="list-item"><div class="grow"><b>${esc(o.CustomerName)}</b>
+      <div class="small muted">${when(o.CreatedAt)} · ${S.itemsText(o)}</div>${o.CancelReason ? `<div class="small" style="color:var(--coral)">${esc(o.CancelReason)}</div>` : ''}</div>
+      <div style="text-align:right"><b class="num">${peso0(o.Subtotal)}</b><div>${S.statusPill(o.Status)}</div></div></div>`).join('') + '</div>' : '<div class="empty">No orders yet.</div>';
+  }
+
+  // ───────────── Products ─────────────
+  async function renderProducts() {
+    $('#page').innerHTML = `<div class="row between" style="margin-bottom:12px"><h2>Products</h2><button class="btn sm mango" id="add">${icon('plus')} Add product</button></div><div id="plist"><p class="muted center" style="padding:30px">Loading…</p></div>`;
+    $('#add').onclick = () => editProduct(null);
+    try { st.products = await api('myProducts'); } catch (e) { return S.error(e); }
+    drawProducts();
+  }
+  function drawProducts() {
+    const el = $('#plist'); if (!el) return;
+    const tracked = st.products.filter(p => p.Stock !== null);
+    const soldOut = tracked.filter(p => p.Stock === 0).length;
+    const low = tracked.filter(p => p.Stock > 0 && p.Stock <= 5).length;
+    const f = st.pFilter || 'All';
+    const list = st.products.filter(p => f === 'All' || (f === 'Low' ? p.Stock !== null && p.Stock <= 5 : p.Status === 'Hidden'));
+    el.innerHTML = !st.products.length
+      ? `<div class="empty"><h3>Add your first product</h3>Customers see your products the moment you add them. Add a photo, a clear name and the price.</div>`
+      : `${soldOut || low ? `<div class="banner ${soldOut ? 'coral' : ''}" style="margin-bottom:12px">${soldOut ? `<b>${soldOut} sold out</b>${low ? ' · ' : ''}` : ''}${low ? `<b>${low} running low</b> (5 or fewer)` : ''}. Tap <b>Restock</b> when new supplies arrive.</div>` : ''}
+      <div class="chips" style="margin-bottom:12px">${[['All', 'All products'], ['Low', 'Low & sold out'], ['Hidden', 'Hidden']].map(([k, l]) => `<button class="chip ${f === k ? 'on' : ''}" data-pf="${k}">${l}</button>`).join('')}</div>
+      ${list.length ? '<div class="list">' + list.map(p => `<div class="list-item tap" data-p="${esc(p.ProductID)}">
+        ${p.ImageURL ? `<img class="thumb" src="${esc(p.ImageURL)}" alt="">` : `<div class="avatar">${S.initial(p.Name)}</div>`}
+        <div class="grow"><b>${esc(p.Name)}</b><div class="small muted">${esc(p.Category || 'No section')} · <b class="num" style="color:var(--forest)">${peso0(p.Price)}</b></div>
+          <div class="small" style="margin-top:2px">${p.Stock === null ? '<span class="muted">Unlimited stock</span>'
+            : `<span style="font-weight:650;color:${p.Stock === 0 ? 'var(--coral)' : p.Stock <= 5 ? '#B45309' : 'var(--leaf)'}">${p.Stock} in stock</span>`}
+            ${p.Status !== 'Available' ? ` · <span class="pill ${p.Status === 'Sold out' ? 'coral' : 'grey'}">${esc(p.Status)}</span>` : ''}</div></div>
+        ${p.Stock !== null ? `<button class="btn sm ghost" data-restock="${esc(p.ProductID)}">${icon('plus')} Restock</button>` : ''}</div>`).join('') + '</div>'
+        : '<div class="empty">Nothing here. Everything is well stocked.</div>'}`;
+    el.onclick = e => {
+      const pf = e.target.closest('[data-pf]'); if (pf) { st.pFilter = pf.dataset.pf; return drawProducts(); }
+      const rs = e.target.closest('[data-restock]'); if (rs) return restock(st.products.find(p => p.ProductID === rs.dataset.restock));
+      const r = e.target.closest('[data-p]'); if (r) editProduct(st.products.find(p => p.ProductID === r.dataset.p));
+    };
+  }
+  function restock(p) {
+    const sh = sheet('Restock ' + p.Name, `<form class="stack" id="rs">
+      <div class="row between card"><span class="muted">In stock now</span><b class="num" style="font-size:22px;color:var(--forest)">${p.Stock}</b></div>
+      <label class="field"><span>How many are you adding?</span><input class="input" name="add" type="number" inputmode="numeric" min="1" max="10000" required placeholder="e.g. 24"></label>
+      <div class="chips">${[5, 10, 20, 50].map(n => `<button type="button" class="chip" data-n="${n}">+${n}</button>`).join('')}</div>
+      <p class="small muted" id="after"></p>
+      <button class="btn block mango">Add to stock</button></form>`);
+    const f = sh.el.querySelector('#rs');
+    const upd = () => { const n = Math.floor(Number(f.add.value) || 0); sh.el.querySelector('#after').textContent = n > 0 ? `New stock will be ${p.Stock + n}.` : ''; };
+    f.add.oninput = upd;
+    sh.el.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { f.add.value = (Math.floor(Number(f.add.value) || 0)) + Number(b.dataset.n); upd(); });
+    f.onsubmit = e => { e.preventDefault(); busy(f.querySelector('button.mango'), async () => {
+      const r = await api('restockProduct', { productId: p.ProductID, add: f.add.value });
+      sh.close(); toast(`${p.Name}: ${r.Stock} in stock now.`);
+      st.products = await api('myProducts'); drawProducts();
+    }); };
+  }
+  function editProduct(p) {
+    p = p || { Status: 'Available' };
+    const cats = Array.from(new Set(st.products.map(x => x.Category).filter(Boolean)));
+    let image = p.ImageURL || '';
+    const sh = sheet(p.ProductID ? 'Edit product' : 'Add product', `<form class="stack" id="pf">
+      <div class="row"><div id="imgPrev">${image ? `<img class="thumb" src="${esc(image)}" alt="">` : '<div class="thumb"></div>'}</div>
+      <div class="grow"><button type="button" class="btn sm ghost" id="pick">${image ? 'Change photo' : 'Add photo'}</button><div class="hint">A clear photo sells better.</div></div></div>
+      <label class="field"><span>Product name</span><input class="input" name="name" value="${esc(p.Name || '')}" required placeholder="e.g. Ube cake 8 inch"></label>
+      <label class="field"><span>Description (optional)</span><input class="input" name="description" value="${esc(p.Description || '')}"></label>
+      <div class="row" style="align-items:flex-start"><label class="field grow"><span>Price (₱)</span><input class="input" name="price" type="number" inputmode="decimal" step="0.01" min="1" value="${p.Price || ''}" required>
+        ${p.ProductID ? '<div class="hint">New price applies to new orders. Orders already placed keep the old price.</div>' : ''}</label>
+      <label class="field grow"><span>${p.ProductID ? 'Stock on hand' : 'Starting stock'}</span><input class="input" name="stock" type="number" inputmode="numeric" min="0" value="${p.Stock === null || p.Stock === undefined ? '' : p.Stock}" placeholder="Unlimited">
+        <div class="hint">${p.ProductID ? 'Changing this sets the exact count. To add new supplies, use Restock.' : 'Leave blank for made-to-order items.'}</div></label></div>
+      <label class="field"><span>Menu section</span><input class="input" name="category" list="cats" value="${esc(p.Category || '')}" placeholder="e.g. Cakes, Drinks, Party trays"><datalist id="cats">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
+      <label class="field"><span>Status</span><select class="input" name="status">${['Available', 'Sold out', 'Hidden'].map(s => `<option ${p.Status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+      <button class="btn block mango">Save product</button>
+      ${p.ProductID ? '<button type="button" class="btn block danger" id="del">Delete product</button>' : ''}</form>`);
+    const f = sh.el.querySelector('#pf');
+    sh.el.querySelector('#pick').onclick = e => busy(e.currentTarget, async () => {
+      const dataUrl = await S.pickImage(); if (!dataUrl) return;
+      sh.el.querySelector('#imgPrev').innerHTML = `<img class="thumb" src="${dataUrl}" alt="">`;
+      const r = await api('uploadImage', { dataUrl });
+      image = r.url; toast('Photo uploaded.');
+    });
+    f.onsubmit = e => { e.preventDefault(); busy(f.querySelector('button.mango'), async () => {
+      const d = S.form(f); d.productId = p.ProductID; d.imageURL = image;
+      const before = p.Stock === null || p.Stock === undefined ? '' : String(p.Stock);
+      if (p.ProductID && d.stock === before) delete d.stock; // unchanged: keep the live count
+      await api('saveProduct', d); sh.close(); toast('Product saved.');
+      st.products = await api('myProducts'); drawProducts();
+    }); };
+    const del = sh.el.querySelector('#del');
+    if (del) del.onclick = async () => {
+      if (!await S.confirm('Delete ' + p.Name + '?', 'Customers will no longer see it. Past orders are not affected.', 'Delete', true)) return;
+      try { await api('deleteProduct', { productId: p.ProductID }); sh.close(); toast('Product deleted.'); st.products = await api('myProducts'); drawProducts(); } catch (e) { S.error(e); }
+    };
+  }
+
+  // ───────────── Sales ─────────────
+  async function renderSales() {
+    $('#page').innerHTML = '<p class="muted center" style="padding:30px">Loading sales…</p>';
+    let d, s;
+    try { [d, s] = await Promise.all([api('merchantDashboard'), api('mySettlements')]); } catch (e) { return S.error(e); }
+    if (st.tab !== 'sales') return;
+    const max = Math.max(1, ...d.week.map(x => x.sales));
+    $('#page').innerHTML = `
+      <div class="stat-grid">
+        <div class="stat"><b>${peso0(d.todaySales)}</b><span>Sales today · ${d.todayOrders} order${d.todayOrders === 1 ? '' : 's'}</span></div>
+        <div class="stat"><b>${d.activeOrders}</b><span>Orders in progress</span></div>
+        <div class="stat"><b>${peso0(d.totalSales)}</b><span>Total sales in the app</span></div>
+        <div class="stat"><b>${d.pointsRedeemedHere}</b><span>Points customers used here (paid back to you)</span></div>
+      </div>
+      <div class="card" style="margin-top:12px"><h3>Last 7 days</h3>
+        <div class="bars">${d.week.map(x => `<div><span class="num" style="font-size:10.5px">${x.sales ? peso0(x.sales) : ''}</span><i style="height:${(x.sales / max) * 80}%"></i><span>${new Date(x.date).toLocaleDateString('en-PH', { weekday: 'short' })}</span></div>`).join('')}</div></div>
+      ${d.bestSellers.length ? `<div class="section-title"><h3>Best sellers (30 days)</h3></div><div class="list">${d.bestSellers.map(b => `<div class="list-item"><div class="grow">${esc(b.name)}</div><b class="num">${b.qty} sold</b></div>`).join('')}</div>` : ''}
+      <div class="section-title"><h3>Payouts</h3></div>
+      <div class="card">${s.openNet > 0 ? `<b class="num" style="font-size:22px;color:var(--leaf)">${peso(s.openNet)}</b><p class="small muted">100 - SHOPS will pay you this for wallet orders and points customers used.</p>`
+        : s.openNet < 0 ? `<b class="num" style="font-size:22px;color:var(--coral)">${peso(-s.openNet)}</b><p class="small muted">You collected service charges in cash. Please remit this to 100 - SHOPS.</p>`
+        : `<b>All settled</b><p class="small muted">Nothing to pay or collect right now.</p>`}</div>
+      ${s.rows.length ? `<div class="list" style="margin-top:10px">${s.rows.slice(0, 30).map(r => `<div class="list-item"><div class="grow"><b class="small">Order ${esc(r.OrderID)}</b><div class="small muted">${when(r.CreatedAt)} · sales ${peso0(r.Entitled)}${r.Collected ? ', you collected ' + peso0(r.Collected) : ''}</div></div>
+        <div style="text-align:right"><b class="num" style="color:${r.Net >= 0 ? 'var(--leaf)' : 'var(--coral)'}">${r.Net >= 0 ? '+' : '−'}${peso0(Math.abs(r.Net))}</b><div><span class="pill ${r.Status === 'Open' ? 'mango' : ''}">${r.Status === 'Open' ? 'Pending' : 'Settled'}</span></div></div></div>`).join('')}</div>` : ''}`;
+  }
+
+  // ───────────── My shop ─────────────
+  function renderStore() {
+    const m = st.me;
+    const link = location.origin + location.pathname.replace(/merchant\.html$/, '') + 'customer.html?ref=' + encodeURIComponent(m.RefCode);
+    $('#page').innerHTML = `
+      <div class="row" style="margin-bottom:16px"><div class="avatar" style="width:60px;height:60px">${m.LogoURL ? `<img src="${esc(m.LogoURL)}" alt="">` : S.initial(m.BusinessName)}</div>
+      <div class="grow"><h2>${esc(m.BusinessName)}</h2><div class="small muted">${esc(m.Category)} · ${esc(m.Address || 'No address yet')}</div></div></div>
+      <div class="card"><h3>Invite customers</h3>
+        <p class="small muted" style="margin:4px 0 12px">Customers who sign up with your QR code or link get welcome points and are counted as your referrals. <b>${m.referrals}</b> so far.</p>
+        <div class="row" style="align-items:flex-start"><div id="qr" style="background:#fff;padding:8px;border-radius:10px;border:1px solid var(--line)"></div>
+        <div class="grow"><div class="small" style="word-break:break-all">${esc(link)}</div>
+        <button class="btn sm ghost" style="margin-top:8px" id="copy">Copy link</button>
+        <button class="btn sm ghost" style="margin-top:8px" id="printQr">Print counter poster</button></div></div></div>
+      <div class="list" style="margin-top:14px">
+        <div class="list-item tap" id="edit"><div class="grow"><b>Edit shop details</b><div class="small muted">Name, logo, address, description</div></div></div>
+        ${S.isStandalone() ? '' : `<div class="list-item tap" id="inst"><div class="grow"><b>Install the app</b><div class="small muted">Get order alerts from your home screen</div></div></div>`}
+        <div class="list-item tap" id="pw"><div class="grow"><b>Change password</b></div></div>
+        <div class="list-item"><div class="grow"><b>Package</b><div class="small muted">${esc(m.Package)} · payment ${esc(m.PaymentStatus.toLowerCase())}</div></div></div>
+        <div class="list-item tap" id="out"><div class="grow"><b style="color:var(--coral)">Log out</b></div></div>
+      </div>`;
+    let tries = 0;
+    const drawQr = () => {
+      const box = $('#qr'); if (!box) return;
+      if (window.QRCode) { box.innerHTML = ''; new QRCode(box, { text: link, width: 104, height: 104, colorDark: '#3A1FD6' }); }
+      else if (++tries < 20) setTimeout(drawQr, 300);
+      else box.innerHTML = '<div class="small muted" style="width:104px">QR needs internet. Use the link for now.</div>';
+    };
+    drawQr();
+    $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copied.'); } catch (e) { toast('Copy failed. Press and hold the link to copy it.', 'error'); } };
+    $('#printQr').onclick = () => printPoster(link);
+    $('#edit').onclick = editStore;
+    const inst = $('#inst'); if (inst) inst.onclick = S.install;
+    $('#pw').onclick = S.changePassword;
+    $('#out').onclick = async () => { if (await S.confirm('Log out?', 'You will stop getting new order alerts on this phone.', 'Log out')) S.logout(); };
+  }
+
+  function printPoster(link) {
+    const w = window.open('', '_blank');
+    if (!w) return toast('Allow pop-ups to print the poster.', 'error');
+    const pts = S.info.welcomePoints;
+    w.document.write(`<!doctype html><html><head><title>Order ${esc(st.me.BusinessName)} on 100 - SHOPS</title>
+      <style>body{font-family:system-ui,sans-serif;text-align:center;padding:40px;color:#1E1466}h1{font-size:44px;margin:0}h2{font-size:26px;color:#E4572E;margin:12px 0}p{font-size:20px}#q{display:inline-block;padding:16px;border:4px solid #6D05D8;border-radius:18px;margin:20px}</style></head>
+      <body><img src="${location.href.replace(/merchant\.html.*$/, '')}img/logo-256.png" style="width:170px" alt="100 - SHOPS"><h1>Scan to order from<br>${esc(st.me.BusinessName)}</h1>
+      ${pts ? `<h2>Get ${pts} points (₱${pts * S.info.pointValue}) on sign-up</h2>` : ''}
+      <div id="q"></div><p>Points can be used in the 100 - SHOPS app on your next order.</p><p><b>100 - SHOPS · Together We Grow</b></p>
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
+      <script>new QRCode(document.getElementById('q'),{text:${JSON.stringify(link)},width:320,height:320,colorDark:'#3A1FD6'});setTimeout(()=>print(),600)<\/script></body></html>`);
+    w.document.close();
+  }
+
+  function editStore() {
+    const m = st.me;
+    let logo = m.LogoURL || '';
+    const sh = sheet('Shop details', `<form class="stack" id="sf">
+      <div class="row"><div class="avatar" id="logoPrev" style="width:60px;height:60px">${logo ? `<img src="${esc(logo)}" alt="">` : S.initial(m.BusinessName)}</div>
+      <button type="button" class="btn sm ghost" id="pick">${logo ? 'Change logo' : 'Add logo'}</button></div>
+      <label class="field"><span>Business name</span><input class="input" name="businessName" value="${esc(m.BusinessName)}" required></label>
+      <label class="field"><span>Owner name</span><input class="input" name="ownerName" value="${esc(m.OwnerName)}"></label>
+      <label class="field"><span>Category</span><select class="input" name="category">${m.categories.map(c => `<option ${c === m.Category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
+      <label class="field"><span>Address</span><input class="input" name="address" value="${esc(m.Address)}"></label>
+      <label class="field"><span>Description</span><textarea class="input" name="description" placeholder="What makes your shop special?">${esc(m.Description)}</textarea></label>
+      <button class="btn block mango">Save details</button></form>`);
+    const f = sh.el.querySelector('#sf');
+    sh.el.querySelector('#pick').onclick = e => {
+      if (m.Status !== 'Active') return toast('You can add a logo once your shop is approved.', 'error');
+      busy(e.currentTarget, async () => {
+        const dataUrl = await S.pickImage(); if (!dataUrl) return;
+        sh.el.querySelector('#logoPrev').innerHTML = `<img src="${dataUrl}" alt="">`;
+        logo = (await api('uploadImage', { dataUrl })).url; toast('Logo uploaded.');
+      });
+    };
+    f.onsubmit = e => { e.preventDefault(); busy(f.querySelector('button.mango'), async () => {
+      const d = S.form(f); d.logoURL = logo;
+      st.me = await api('updateStore', d); sh.close(); toast('Shop details saved.');
+      if (st.me.Status === 'Active') go('store'); else renderPending();
+    }); };
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

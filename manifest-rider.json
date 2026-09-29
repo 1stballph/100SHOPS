@@ -1,0 +1,33 @@
+{
+  "name": "100 - SHOPS Rider",
+  "short_name": "Rider",
+  "description": "Deliver orders and track your earnings.",
+  "id": "./rider.html",
+  "start_url": "./rider.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#2A1BD0",
+  "theme_color": "#1E1466",
+  "lang": "en-PH",
+  "icons": [
+    {
+      "src": "icons/icon-rider-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-rider-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-rider-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

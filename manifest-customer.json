@@ -1,0 +1,33 @@
+{
+  "name": "100 - SHOPS",
+  "short_name": "100 SHOPS",
+  "description": "Order from local Ilonggo shops. Pay with your wallet, earn points.",
+  "id": "./customer.html",
+  "start_url": "./customer.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#2A1BD0",
+  "theme_color": "#1E1466",
+  "lang": "en-PH",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

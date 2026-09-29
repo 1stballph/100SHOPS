@@ -1,0 +1,33 @@
+{
+  "name": "100 - SHOPS Merchant",
+  "short_name": "Shop",
+  "description": "Manage orders, products and sales for your shop.",
+  "id": "./merchant.html",
+  "start_url": "./merchant.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#2A1BD0",
+  "theme_color": "#1E1466",
+  "lang": "en-PH",
+  "icons": [
+    {
+      "src": "icons/icon-merchant-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-merchant-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-merchant-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

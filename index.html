@@ -4,7 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>100 - SHOPS · Startup Hub for Online Products and Services</title>
-<meta name="description" content="100 local Ilonggo shops in one app. Order, pay with your wallet, earn points. Together We Grow.">
+<meta name="description" content="Order from 100 founding Ilonggo shops in one app. No account needed. Pay cash or with your wallet, and earn points at every shop.">
+<meta property="og:title" content="100 - SHOPS · Iloilo's local shops in one app">
+<meta property="og:description" content="Order from 100 founding Ilonggo shops. Earn points at every shop. Together We Grow.">
+<meta property="og:image" content="img/logo-512.png">
 <meta name="theme-color" content="#1E1466">
 <link rel="manifest" href="manifest-customer.json">
 <link rel="icon" href="icons/icon-192.png">
@@ -14,41 +17,293 @@
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
 <style>
-  .hero { background: linear-gradient(135deg, #0154F0 0%, #3A1FD6 55%, #6D05D8 100%); color: #fff; padding: calc(40px + var(--safe-t)) 22px 60px; position: relative; overflow: hidden; }
-  .wrap { max-width: 720px; margin: 0 auto; position: relative; z-index: 1; text-align: center; }
-  .hero-logo { width: min(260px, 62vw); height: auto; margin: 0 auto; filter: drop-shadow(0 14px 30px rgba(20,0,80,.35)); }
-  .tag { font-size: 19px; margin: 18px auto 0; max-width: 32ch; opacity: .95; }
-  .launch { margin-top: 26px; display: inline-flex; flex-direction: column; gap: 2px; align-items: center; border-top: 2px solid rgba(255,255,255,.6); padding-top: 12px; }
-  .launch b { font-family: var(--display); font-size: 22px; white-space: nowrap; margin-left: 4px; }
-  .doors { max-width: 720px; margin: -28px auto 0; padding: 0 16px 40px; position: relative; z-index: 2; display: grid; gap: 12px; }
-  .door { display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 18px; text-decoration: none; color: var(--ink); }
-  .door:hover { border-color: var(--leaf); }
-  .door.main { background: linear-gradient(135deg, var(--leaf), var(--mango)); border-color: transparent; color: #fff; }
-  .door.main svg, .door.main h2 { color: #fff; }
-  .door svg { width: 30px; height: 30px; color: var(--forest); flex-shrink: 0; }
-  .door h2 { font-size: 19px; }
-  .foot { text-align: center; padding: 10px 20px 40px; color: var(--muted); font-size: 13px; }
+  html { scroll-behavior: smooth; }
+  body { background: #fff; }
+  .w { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+  section { scroll-margin-top: 70px; }
+
+  /* Nav */
+  .nav { position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,.92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); padding-top: var(--safe-t); }
+  .nav .w { display: flex; align-items: center; gap: 18px; height: 62px; }
+  .nav .brand { display: flex; align-items: center; gap: 9px; font-family: var(--display); font-weight: 800; font-size: 18px; color: var(--forest); text-decoration: none; }
+  .nav .brand img { width: 38px; height: 38px; }
+  .nav .brand span { color: var(--mango); }
+  .nav .links { display: flex; gap: 22px; margin-left: auto; }
+  .nav .links a { color: var(--ink); text-decoration: none; font-weight: 600; font-size: 14.5px; }
+  .nav .links a:hover { color: var(--leaf); }
+  @media (max-width: 820px) { .nav .links { display: none; } .nav .cta { margin-left: auto; } }
+
+  /* Hero */
+  .hero { background: linear-gradient(140deg, #0154F0 0%, #2A1BD0 50%, #6D05D8 100%); color: #fff; position: relative; overflow: hidden; }
+  .hero .w { display: grid; grid-template-columns: 1.1fr .9fr; gap: 40px; align-items: center; padding-top: 56px; padding-bottom: 72px; }
+  .hero h1 { color: #fff; font-size: clamp(36px, 5.6vw, 60px); line-height: 1.02; letter-spacing: -0.03em; }
+  .hero p.lead { font-size: 18.5px; line-height: 1.55; margin-top: 18px; max-width: 34ch; opacity: .94; }
+  .hero .ctas { display: flex; gap: 10px; margin-top: 26px; flex-wrap: wrap; }
+  .btn.white { background: #fff; color: var(--forest); }
+  .btn.outline { background: transparent; color: #fff; border: 1.5px solid rgba(255,255,255,.55); }
+  .btn.lg { padding: 15px 24px; font-size: 16px; border-radius: 14px; }
+  .facts { display: flex; gap: 28px; margin-top: 30px; flex-wrap: wrap; }
+  .facts div b { display: block; font-family: var(--display); font-size: 26px; font-weight: 800; line-height: 1.1; }
+  .facts div span { font-size: 13px; opacity: .82; }
+  .hero-art { position: relative; aspect-ratio: 1; max-width: 420px; justify-self: center; width: 100%; }
+  .hero-art img { position: absolute; inset: 9%; width: 82%; height: 82%; border-radius: 50%; box-shadow: 0 30px 70px rgba(20,0,90,.45); }
+  .hero-art svg { position: absolute; inset: -10%; width: 120%; height: 120%; animation: spin 36s linear infinite; }
+  .hero-art svg ellipse { fill: none; stroke: rgba(255,255,255,.4); stroke-width: 2; stroke-dasharray: 3 9; }
+  .hero-art .tag { position: absolute; background: #fff; color: var(--forest); border-radius: 14px; padding: 9px 13px; font-size: 13px; font-weight: 700; box-shadow: 0 12px 30px rgba(20,0,90,.3); display: flex; gap: 7px; align-items: center; white-space: nowrap; }
+  .hero-art .tag svg { position: static; width: 18px; height: 18px; animation: none; color: var(--mango); }
+  .hero-art .t1 { top: 6%; left: -4%; } .hero-art .t2 { bottom: 12%; right: -6%; } .hero-art .t3 { bottom: -2%; left: 8%; }
+  @media (max-width: 820px) {
+    .hero .w { grid-template-columns: 1fr; padding-top: 34px; padding-bottom: 56px; text-align: center; }
+    .hero p.lead { margin-left: auto; margin-right: auto; }
+    .hero .ctas, .facts { justify-content: center; }
+    .hero-art { max-width: 300px; order: -1; margin-bottom: 16px; }
+    .hero-art .t2 { bottom: -4%; right: -2%; } .hero-art .t3 { display: none; }
+  }
+
+  .band { padding: 72px 0; }
+  .band.tint { background: var(--paper); }
+  .eyebrow-free h2 { font-size: clamp(28px, 3.6vw, 40px); letter-spacing: -0.02em; }
+  .band .intro-p { color: var(--muted); font-size: 17px; margin-top: 10px; max-width: 58ch; }
+
+  /* Founding 100 grid (signature) */
+  .founding { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+  .grid100 { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; max-width: 440px; width: 100%; justify-self: center; }
+  .grid100 i { aspect-ratio: 1; border-radius: 7px; border: 1.5px dashed #C9CFE6; display: flex; align-items: center; justify-content: center;
+    font-style: normal; font-size: 11px; font-weight: 800; font-family: var(--display); color: #fff; transition: transform .2s; }
+  .grid100 i.on { border: 0; background: linear-gradient(135deg, var(--leaf), var(--mango)); }
+  .grid100.anim i.on { animation: pop .45s cubic-bezier(.2,1.5,.4,1) both; animation-delay: calc(var(--k) * 18ms); }
+  .grid100 i.on:hover { transform: scale(1.2); }
+  @keyframes pop { from { transform: scale(0); } }
+  .count-big { font-family: var(--display); font-weight: 800; font-size: 64px; line-height: 1; color: var(--forest); letter-spacing: -0.03em; }
+  .count-big small { font-size: 26px; color: var(--muted); font-weight: 700; }
+  @media (max-width: 820px) { .founding { grid-template-columns: 1fr; gap: 30px; } }
+
+  /* Steps */
+  .steps3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 34px; }
+  .step { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 24px; }
+  .step .n { width: 40px; height: 40px; border-radius: 12px; background: var(--leaf-soft); color: var(--leaf); font-family: var(--display); font-weight: 800; font-size: 19px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+  .step h3 { font-size: 19px; }
+  .step p { color: var(--muted); margin-top: 6px; }
+  @media (max-width: 820px) { .steps3 { grid-template-columns: 1fr; } }
+
+  /* Shops */
+  .shops { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 28px; }
+  .shop { display: flex; gap: 12px; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 16px; text-decoration: none; color: var(--ink); background: var(--card); }
+  .shop:hover { border-color: var(--leaf); }
+
+  /* Wallet & points */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+  .ticks { list-style: none; margin-top: 20px; display: grid; gap: 14px; }
+  .ticks li { display: flex; gap: 12px; }
+  .ticks li svg { width: 22px; height: 22px; color: var(--leaf); flex-shrink: 0; margin-top: 2px; }
+  .ticks b { color: var(--forest); }
+  .demo-card { max-width: 380px; justify-self: center; width: 100%; transform: rotate(-3deg); box-shadow: 0 30px 60px rgba(30,20,102,.3); }
+  @media (max-width: 820px) { .split { grid-template-columns: 1fr; gap: 30px; } .split .demo-card { order: -1; } }
+
+  /* Merchants */
+  .merch { background: var(--forest); color: #fff; border-radius: 28px; padding: 44px; display: grid; grid-template-columns: 1.2fr .8fr; gap: 36px; }
+  .merch h2 { color: #fff; }
+  .merch .ticks li svg { color: #9DB8FF; }
+  .merch .ticks b { color: #fff; }
+  .merch .ticks span { opacity: .85; }
+  .slots { background: rgba(255,255,255,.08); border-radius: 20px; padding: 26px; align-self: center; text-align: center; }
+  .slots .count-big { color: #fff; }
+  .slots .count-big small { color: rgba(255,255,255,.7); }
+  @media (max-width: 820px) { .merch { grid-template-columns: 1fr; padding: 28px 22px; } }
+
+  .riders { display: flex; gap: 24px; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 22px; padding: 28px; margin-top: 18px; flex-wrap: wrap; }
+
+  /* FAQ */
+  .faq { margin-top: 26px; display: grid; gap: 10px; max-width: 760px; }
+  .faq details { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .faq summary { font-weight: 700; color: var(--forest); cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 10px; }
+  .faq summary::after { content: '+'; font-size: 20px; line-height: 1; color: var(--leaf); }
+  .faq details[open] summary::after { content: '−'; }
+  .faq p { color: var(--muted); margin-top: 8px; }
+
+  footer { background: #140E45; color: rgba(255,255,255,.8); padding: 44px 0 calc(34px + var(--safe-b)); }
+  footer .w { display: flex; justify-content: space-between; gap: 30px; flex-wrap: wrap; }
+  footer a { color: #fff; text-decoration: none; }
+  footer .cols { display: flex; gap: 48px; flex-wrap: wrap; }
+  footer .cols div { display: grid; gap: 8px; align-content: start; font-size: 14.5px; }
+  footer .cols b { color: #fff; font-family: var(--display); }
+  @media (prefers-reduced-motion: reduce) { .hero-art svg { animation: none; } }
 </style>
 </head>
 <body data-role="customer" data-no-intro>
-<header class="hero"><div class="wrap">
-  <img class="hero-logo" src="img/logo-512.png" alt="100 - SHOPS: Startup Hub for Online Products and Services">
-  <p class="tag">One hundred local Ilonggo shops in one app. Order, pay with your wallet, and earn points at every shop. Together We Grow.</p>
-  <div class="launch"><div>Launching <b id="launch">Oct 30, 2026</b></div><div class="small" style="opacity:.85">in time for Halloween and Undas</div></div>
+
+<nav class="nav"><div class="w">
+  <a class="brand" href="#top"><img src="img/logo-96.png" alt="">100 - <span>SHOPS</span></a>
+  <div class="links"><a href="#shops">Shops</a><a href="#how">How it works</a><a href="#points">Points</a><a href="#merchants">For shops</a><a href="#riders">Riders</a></div>
+  <a class="btn sm mango cta" href="customer.html">Start shopping</a>
+</div></nav>
+
+<header class="hero" id="top"><div class="w">
+  <div>
+    <h1>Iloilo's local shops, all in one app.</h1>
+    <p class="lead">Order from 100 founding Ilonggo businesses: food, cakes, flowers, gifts and services. No account needed to buy. Sign up and earn points at every shop.</p>
+    <div class="ctas"><a class="btn white lg" href="customer.html">Start shopping</a><a class="btn outline lg" href="#merchants">Join as a shop</a></div>
+    <div class="facts">
+      <div><b id="fShops">100</b><span>founding shops</span></div>
+      <div><b>1 pt</b><span>for every ₱100</span></div>
+      <div><b id="fLaunch">Oct 30</b><span>launch day</span></div>
+    </div>
+  </div>
+  <div class="hero-art" aria-hidden="true">
+    <svg viewBox="0 0 400 400"><ellipse cx="200" cy="200" rx="196" ry="196"/></svg>
+    <img src="img/logo-512.png" alt="">
+    <div class="tag t1"><span id="i-star"></span>+30 points earned</div>
+    <div class="tag t2"><span id="i-bike"></span>Rider on the way</div>
+    <div class="tag t3"><span id="i-wallet"></span>Paid by wallet</div>
+  </div>
 </div></header>
-<main class="doors">
-  <a class="door main" href="customer.html"><span id="i1"></span><div class="grow"><h2>Order from local shops</h2><div class="small">Sign up and get welcome points for your first order.</div></div></a>
-  <a class="door" href="merchant.html"><span id="i2"></span><div class="grow"><h2>I own a shop</h2><div class="small muted">Join as a founding merchant or manage your orders.</div></div></a>
-  <a class="door" href="rider.html"><span id="i3"></span><div class="grow"><h2>I want to deliver</h2><div class="small muted">Earn the delivery fee on every trip.</div></div></a>
-</main>
-<p class="foot">100 - SHOPS · Startup Hub for Online Products and Services · Iloilo City · <a href="admin.html">Admin</a></p>
+
+<section class="band" id="founding"><div class="w founding">
+  <div class="eyebrow-free">
+    <h2>The Founding 100</h2>
+    <p class="intro-p">We're building this with exactly one hundred local businesses. Each founding shop gets a numbered slot, a storefront in the app, and a share in the Merchant Community Revenue-Sharing Pool.</p>
+    <div style="margin-top:24px"><div class="count-big"><span id="used">0</span><small> / <span id="limit">100</span></small></div>
+      <p class="muted" style="margin-top:4px" id="slotText">founding slots taken</p></div>
+    <a class="btn mango" style="margin-top:20px" href="merchant.html">Claim a founding slot</a>
+  </div>
+  <div class="grid100" id="grid" role="img" aria-label="Founding merchant slots"></div>
+</div></section>
+
+<section class="band tint" id="how"><div class="w eyebrow-free">
+  <h2>How it works</h2>
+  <p class="intro-p">Shopping local, the easy way. Anyone can order, with or without an account.</p>
+  <div class="steps3">
+    <div class="step"><div class="n">1</div><h3>Find a local shop</h3><p>Browse bakeries, food, flowers, gifts and more from Ilonggo businesses near you.</p></div>
+    <div class="step"><div class="n">2</div><h3>Order your way</h3><p>Get it delivered or pick it up. Pay cash, or tap to pay with your 100 - SHOPS wallet.</p></div>
+    <div class="step"><div class="n">3</div><h3>Earn points</h3><p>Members earn 1 point for every ₱100. Use them as cash on your next order at any shop.</p></div>
+  </div>
+</div></section>
+
+<section class="band" id="shops"><div class="w eyebrow-free">
+  <div class="row between wrap"><div><h2>Shops you can order from</h2><p class="intro-p">Tap a shop to see what they sell.</p></div>
+  <a class="btn ghost" href="customer.html">See all shops</a></div>
+  <div class="shops" id="shopList"><p class="muted">Loading shops…</p></div>
+</div></section>
+
+<section class="band tint" id="points"><div class="w split">
+  <div class="eyebrow-free">
+    <h2>A wallet that helps you budget, and points that add up</h2>
+    <ul class="ticks">
+      <li><span id="k1"></span><div><b>Top up once, pay in one tap.</b><br><span class="muted">GCash, Maya, bank transfer or cash.</span></div></li>
+      <li><span id="k2"></span><div><b>Set a weekly or monthly food budget.</b><br><span class="muted">Your wallet card shows what's left, and can stop orders that go over.</span></div></li>
+      <li><span id="k3"></span><div><b>Earn points at every shop, use them at any shop.</b><br><span class="muted"><span id="ptsRule">1 point for every ₱100, up to 30 points per order. 1 point = ₱1.</span></span></div></li>
+      <li><span id="k4"></span><div><b>Welcome gift.</b><br><span class="muted" id="welcomeTxt">New members get 20 points (₱20) to start.</span></div></li>
+    </ul>
+    <a class="btn mango" style="margin-top:24px" href="customer.html">Sign up free</a>
+  </div>
+  <div class="suki demo-card" aria-hidden="true">
+    <div class="suki-top"><div><div class="suki-label">Wallet balance</div><div class="suki-bal">₱1,250.00</div></div>
+    <div class="suki-pts"><div class="suki-label">Points</div><b>48</b><span class="small" style="opacity:.8">= ₱48</span></div></div>
+    <div class="suki-meter"><div class="track"><div class="fill" style="width:62%"></div></div>
+    <div class="row between"><span>This week: ₱930 of ₱1,500</span><span>₱570 left</span></div></div>
+    <div class="suki-actions"><span class="btn mango">Top up</span><span class="btn ghost">Budget</span></div>
+  </div>
+</div></section>
+
+<section class="band" id="merchants"><div class="w">
+  <div class="merch">
+    <div>
+      <h2 style="font-size:clamp(28px,3.6vw,40px)">Own a shop? Together We Grow.</h2>
+      <ul class="ticks">
+        <li><span id="m1"></span><div><b>Your own storefront and orders on your phone.</b><br><span>A sound plays for every new order. Accept, prepare, done.</span></div></li>
+        <li><span id="m2"></span><div><b>Customers from 99 other shops.</b><br><span>Points earned anywhere can be spent at your shop, and you get paid back in full.</span></div></li>
+        <li><span id="m3"></span><div><b>Your own QR code and counter poster.</b><br><span>Walk-in customers sign up through you and become your referrals.</span></div></li>
+        <li><span id="m4"></span><div><b>Community revenue-sharing pool.</b><br><span>Part of every order's service charge goes back into growing the community.</span></div></li>
+      </ul>
+    </div>
+    <div class="slots">
+      <div class="count-big"><span id="left">100</span><small> left</small></div>
+      <p style="opacity:.85;margin:6px 0 18px">founding slots open</p>
+      <a class="btn white block lg" href="merchant.html">Sign up my shop</a>
+      <a href="merchant.html" style="display:block;margin-top:12px;color:#fff;font-size:14px">Already a merchant? Log in</a>
+    </div>
+  </div>
+
+  <div class="riders" id="riders">
+    <div class="row" style="gap:16px"><div class="avatar" style="width:56px;height:56px;padding:12px;color:var(--leaf)" id="rIcon"></div>
+    <div><h3 style="font-size:20px">Deliver with 100 - SHOPS</h3><p class="muted">Keep the delivery fee on every trip. Go online whenever you like.</p></div></div>
+    <a class="btn" href="rider.html">Become a rider</a>
+  </div>
+</div></section>
+
+<section class="band tint" id="faq"><div class="w eyebrow-free">
+  <h2>Questions</h2>
+  <div class="faq">
+    <details><summary>Do I need an account to order?</summary><p>No. You can order as a guest and pay cash. Sign up (it's free) if you want to earn points, pay with your wallet, and set a food budget.</p></details>
+    <details><summary>How much does it cost?</summary><p id="feeTxt">Each order has a fixed ₱50 service charge, plus a delivery fee if you choose delivery. Part of every service charge goes into the community pool that pays for your points.</p></details>
+    <details><summary>Where can I use my points?</summary><p>At any 100 - SHOPS store, on orders placed in the app. Points can't be used for walk-in purchases. You can order in the app and choose pick up instead.</p></details>
+    <details><summary>Do points expire?</summary><p id="expTxt">Points last 12 months. Your oldest points are used first.</p></details>
+    <details><summary>How do I install the app?</summary><p>Open the shop page on your phone. On Android, tap Install when it appears. On iPhone, tap Share, then Add to Home Screen.</p></details>
+  </div>
+</div></section>
+
+<footer><div class="w">
+  <div style="max-width:320px"><div class="row" style="gap:10px"><img src="img/logo-96.png" alt="" style="width:48px;height:48px"><b style="font-family:var(--display);font-size:19px;color:#fff">100 - SHOPS</b></div>
+    <p style="margin-top:12px;font-size:14.5px">Startup Hub for Online Products and Services. Iloilo City. Together We Grow.</p>
+    <p style="margin-top:10px;font-size:14px">Contact: <span id="support">—</span></p></div>
+  <div class="cols">
+    <div><b>Shop</b><a href="customer.html">Start shopping</a><a href="#points">Points and wallet</a><a href="#faq">Questions</a></div>
+    <div><b>Partners</b><a href="merchant.html">Merchant app</a><a href="rider.html">Rider app</a><a href="admin.html">Admin</a></div>
+  </div>
+</div></footer>
+
 <script src="config.js"></script>
 <script src="app.js"></script>
 <script>
-  document.getElementById('i1').innerHTML = S.icon('store');
-  document.getElementById('i2').innerHTML = S.icon('box');
-  document.getElementById('i3').innerHTML = S.icon('bike');
-  S.loadInfo().then(i => { if (i.launchDate) document.getElementById('launch').textContent = S.dateOnly(i.launchDate); }).catch(() => {});
+(function () {
+  const { esc, peso0 } = S;
+  const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  set('i-star', S.icon('star')); set('i-bike', S.icon('bike')); set('i-wallet', S.icon('wallet'));
+  const check = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke-width="1.8"/><path d="M8 12.5l2.6 2.6L16 9.5"/></svg>';
+  ['k1', 'k2', 'k3', 'k4', 'm1', 'm2', 'm3', 'm4'].forEach(id => set(id, check));
+  set('rIcon', S.icon('bike'));
+
+  // Founding 100 grid
+  function drawGrid(limit, merchants) {
+    const byNo = {};
+    merchants.forEach(m => { if (m.FoundingNo) byNo[m.FoundingNo] = m; });
+    const used = Object.keys(byNo).length;
+    const cells = [];
+    for (let i = 1; i <= limit; i++) {
+      const m = byNo[i];
+      cells.push(m ? `<i class="on" style="--k:${i}" title="#${i} ${esc(m.BusinessName)}">${S.initial(m.BusinessName)}</i>` : `<i title="Slot #${i} open"></i>`);
+    }
+    const g = document.getElementById('grid');
+    g.innerHTML = cells.join('');
+    g.setAttribute('aria-label', used + ' of ' + limit + ' founding slots taken');
+    if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const io = new IntersectionObserver(es => { if (es[0].isIntersecting) { g.classList.add('anim'); io.disconnect(); } }, { threshold: .3 });
+      g.classList.remove('anim'); io.observe(g);
+    }
+  }
+  drawGrid(100, []);
+
+  S.loadInfo().then(info => {
+    const used = info.foundingUsed, limit = info.foundingLimit;
+    set('used', used); set('limit', limit); set('left', Math.max(0, limit - used)); set('fShops', limit);
+    set('slotText', used ? 'founding slots taken. ' + (limit - used) + ' still open.' : 'founding slots taken. Be the first!');
+    if (info.launchDate) set('fLaunch', esc(new Date(info.launchDate).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })));
+    set('ptsRule', `1 point for every ${peso0(info.pesosPerPoint)}, up to ${info.pointsCap} points per order. 1 point = ${peso0(info.pointValue)}.`);
+    set('welcomeTxt', info.welcomePoints ? `New members get ${info.welcomePoints} points (${peso0(info.welcomePoints * info.pointValue)}) to start.` : 'Sign up free in under a minute.');
+    set('feeTxt', `Each order has a fixed ${peso0(info.serviceFee)} service charge, plus a ${peso0(info.deliveryFee)} delivery fee if you choose delivery. Part of every service charge goes into the community pool that pays for your points.`);
+    set('expTxt', `Points last ${info.pointsExpiryMonths} months. Your oldest points are used first.`);
+    set('support', esc(info.supportContact));
+    return S.api('listMerchants').then(ms => {
+      drawGrid(limit, ms);
+      const open = ms.filter(m => m.productCount > 0).slice(0, 9);
+      set('shopList', open.length ? open.map(m => `<a class="shop" href="customer.html?shop=${encodeURIComponent(m.MerchantID)}">
+        <div class="avatar">${m.LogoURL ? `<img src="${esc(m.LogoURL)}" alt="">` : S.initial(m.BusinessName)}</div>
+        <div class="grow"><b>${esc(m.BusinessName)}</b><div class="small muted">${esc(m.Category)}</div></div>
+        ${m.IsOpen ? '<span class="pill">Open</span>' : '<span class="pill grey">Closed</span>'}</a>`).join('')
+        : `<p class="muted">Our founding shops are setting up their stores. Check back on launch day, or <a href="merchant.html">add your shop</a>.</p>`);
+    });
+  }).catch(() => set('shopList', '<p class="muted">Open the <a href="customer.html">shop app</a> to see all stores.</p>'));
+})();
 </script>
 </body>
 </html>
